@@ -17,8 +17,31 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, event_type TEXT, 
                   step INTEGER, payload TEXT, timestamp TEXT,
                   FOREIGN KEY(project_id) REFERENCES projects(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS search_cache
+                 (query_hash TEXT PRIMARY KEY, query TEXT, result TEXT, timestamp TEXT)''')
     conn.commit()
     conn.close()
+
+def log_search(query, result):
+    import hashlib
+    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("INSERT OR REPLACE INTO search_cache VALUES (?, ?, ?, ?)",
+              (query_hash, query, json.dumps(result), now))
+    conn.commit()
+    conn.close()
+
+def check_search(query):
+    import hashlib
+    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT result FROM search_cache WHERE query_hash=?", (query_hash,))
+    row = c.fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else None
 
 def start_project(project_id, name, objective):
     conn = sqlite3.connect(DB_PATH)
@@ -87,6 +110,11 @@ if __name__ == "__main__":
     update_parser.add_argument("--id", required=True)
     update_parser.add_argument("--status", choices=['active', 'paused', 'completed', 'failed'], required=True)
 
+    # Search Cache
+    cache_parser = subparsers.add_parser("cache")
+    cache_parser.add_argument("--query", required=True)
+    cache_parser.add_argument("--set-result")
+
     # Log
     log_parser = subparsers.add_parser("log")
     log_parser.add_argument("--id", required=True)
@@ -110,6 +138,16 @@ if __name__ == "__main__":
             print(f"[{p[3].upper()}] {p[0]}: {p[1]} - {p[2]} ({p[4]})")
     elif args.command == "update":
         update_status(args.id, args.status)
+    elif args.command == "cache":
+        if args.set_result:
+            log_search(args.query, json.loads(args.set_result))
+            print(f"Cached result for: {args.query}")
+        else:
+            result = check_search(args.query)
+            if result:
+                print(json.dumps(result, indent=2))
+            else:
+                print("No cached result found.")
     elif args.command == "log":
         log_event(args.id, args.type, args.step, json.loads(args.payload))
         print(f"Logged {args.type} for {args.id}")

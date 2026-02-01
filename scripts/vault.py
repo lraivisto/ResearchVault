@@ -89,12 +89,20 @@ def get_status(project_id):
     return {"project": project, "recent_events": events}
 
 def update_status(project_id, status):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE projects SET status=? WHERE id=?", (status, project_id))
-    conn.commit()
-    conn.close()
-    print(f"Project '{project_id}' status updated to '{status}'.")
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("UPDATE projects SET status=? WHERE id=?", (status, project_id))
+        if c.rowcount == 0:
+            print(f"Error: Project '{project_id}' not found.")
+        else:
+            conn.commit()
+            print(f"Project '{project_id}' status updated to '{status}'.")
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def list_projects():
     conn = sqlite3.connect(DB_PATH)

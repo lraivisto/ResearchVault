@@ -161,4 +161,16 @@ if __name__ == "__main__":
         log_event(args.id, args.type, args.step, json.loads(args.payload))
         print(f"Logged {args.type} for {args.id}")
     elif args.command == "status":
-        print(json.dumps(get_status(args.id), indent=2))
+        status = get_status(args.id)
+        if not status:
+            print(f"Project '{args.id}' not found.")
+        else:
+            p = status['project']
+            print(f"\n--- Project: {p[1]} ({p[0]}) ---")
+            print(f"Status: {p[3].upper()}")
+            print(f"Objective: {p[2]}")
+            print(f"Created: {p[4]}")
+            print("\nRecent Events:")
+            for e in status['recent_events']:
+                print(f"  [{e[3]}] {e[0]} (Step {e[1]}): {e[2]}")
+            print("-" * 30 + "\n")

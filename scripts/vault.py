@@ -113,10 +113,14 @@ def add_insight(project_id, title, content, source_url="", tags=""):
     conn.commit()
     conn.close()
 
-def get_insights(project_id):
+def get_insights(project_id, tag_filter=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? ORDER BY id DESC", (project_id,))
+    if tag_filter:
+        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? AND tags LIKE ? ORDER BY id DESC", 
+                  (project_id, f"%{tag_filter}%"))
+    else:
+        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? ORDER BY id DESC", (project_id,))
     rows = c.fetchall()
     conn.close()
     return rows
@@ -164,6 +168,7 @@ if __name__ == "__main__":
     insight_parser.add_argument("--content")
     insight_parser.add_argument("--url", default="")
     insight_parser.add_argument("--tags", default="")
+    insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
 
     args = parser.parse_args()
 
@@ -218,6 +223,8 @@ if __name__ == "__main__":
                 add_insight(args.id, args.title, args.content, args.url, args.tags)
                 print(f"Added insight to project '{args.id}'.")
         else:
-            insights = get_insights(args.id)
+            insights = get_insights(args.id, tag_filter=args.filter_tag)
+            if not insights:
+                print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
             for i in insights:
                 print(f"[{i[4]}] {i[0]}\nContent: {i[1]}\nSource: {i[2]}\nTags: {i[3]}\n")

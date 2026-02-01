@@ -15,8 +15,15 @@ def init_db():
                  (id TEXT PRIMARY KEY, name TEXT, objective TEXT, status TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS events
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, event_type TEXT, 
-                  step INTEGER, payload TEXT, timestamp TEXT,
+                  step INTEGER, payload TEXT, confidence REAL, timestamp TEXT,
                   FOREIGN KEY(project_id) REFERENCES projects(id))''')
+    
+    # Migration: Add confidence column if it doesn't exist
+    c.execute("PRAGMA table_info(events)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'confidence' not in columns:
+        c.execute("ALTER TABLE events ADD COLUMN confidence REAL DEFAULT 1.0")
+        
     c.execute('''CREATE TABLE IF NOT EXISTS search_cache
                  (query_hash TEXT PRIMARY KEY, query TEXT, result TEXT, timestamp TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS insights
@@ -66,12 +73,12 @@ def start_project(project_id, name, objective):
     conn.close()
     print(f"Project '{name}' ({project_id}) initialized.")
 
-def log_event(project_id, event_type, step, payload):
+def log_event(project_id, event_type, step, payload, confidence=1.0):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.now().isoformat()
-    c.execute("INSERT INTO events (project_id, event_type, step, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
-              (project_id, event_type, step, json.dumps(payload), now))
+    c.execute("INSERT INTO events (project_id, event_type, step, payload, confidence, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+              (project_id, event_type, step, json.dumps(payload), confidence, now))
     conn.commit()
     conn.close()
 
@@ -83,7 +90,7 @@ def get_status(project_id):
     if not project:
         conn.close()
         return None
-    c.execute("SELECT event_type, step, payload, timestamp FROM events WHERE project_id=? ORDER BY id DESC LIMIT 10", (project_id,))
+    c.execute("SELECT event_type, step, payload, confidence, timestamp FROM events WHERE project_id=? ORDER BY id DESC LIMIT 10", (project_id,))
     events = c.fetchall()
     conn.close()
     return {"project": project, "recent_events": events}
@@ -155,6 +162,7 @@ if __name__ == "__main__":
     log_parser.add_argument("--type", required=True)
     log_parser.add_argument("--step", type=int, default=0)
     log_parser.add_argument("--payload", default="{}")
+    log_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
 
     # Status
     status_parser = subparsers.add_parser("status")
@@ -193,8 +201,8 @@ if __name__ == "__main__":
             else:
                 print("No cached result found.")
     elif args.command == "log":
-        log_event(args.id, args.type, args.step, json.loads(args.payload))
-        print(f"Logged {args.type} for {args.id}")
+        log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf)
+        print(f"Logged {args.type} for {args.id} (conf: {args.conf})")
     elif args.command == "status":
         status = get_status(args.id)
         if not status:
@@ -207,7 +215,7 @@ if __name__ == "__main__":
             print(f"Created: {p[4]}")
             print("\nRecent Events:")
             for e in status['recent_events']:
-                print(f"  [{e[3]}] {e[0]} (Step {e[1]}): {e[2]}")
+                print(f"  [{e[4]}] {e[0]} (Step {e[1]}) [Conf: {e[3]}]: {e[2]}")
             
             insights = get_insights(args.id)
             if insights:

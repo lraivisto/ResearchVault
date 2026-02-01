@@ -19,6 +19,10 @@ def init_db():
                   FOREIGN KEY(project_id) REFERENCES projects(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS search_cache
                  (query_hash TEXT PRIMARY KEY, query TEXT, result TEXT, timestamp TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS insights
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, title TEXT, 
+                  content TEXT, source_url TEXT, tags TEXT, timestamp TEXT,
+                  FOREIGN KEY(project_id) REFERENCES projects(id))''')
     conn.commit()
     conn.close()
 
@@ -100,6 +104,23 @@ def list_projects():
     conn.close()
     return projects
 
+def add_insight(project_id, title, content, source_url="", tags=""):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("INSERT INTO insights (project_id, title, content, source_url, tags, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+              (project_id, title, content, source_url, tags, now))
+    conn.commit()
+    conn.close()
+
+def get_insights(project_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? ORDER BY id DESC", (project_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
 if __name__ == "__main__":
     init_db()
     parser = argparse.ArgumentParser(description="Vault Orchestrator")
@@ -134,6 +155,15 @@ if __name__ == "__main__":
     # Status
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("--id", required=True)
+
+    # Insights
+    insight_parser = subparsers.add_parser("insight")
+    insight_parser.add_argument("--id", required=True)
+    insight_parser.add_argument("--add", action="store_true")
+    insight_parser.add_argument("--title")
+    insight_parser.add_argument("--content")
+    insight_parser.add_argument("--url", default="")
+    insight_parser.add_argument("--tags", default="")
 
     args = parser.parse_args()
 
@@ -173,4 +203,21 @@ if __name__ == "__main__":
             print("\nRecent Events:")
             for e in status['recent_events']:
                 print(f"  [{e[3]}] {e[0]} (Step {e[1]}): {e[2]}")
+            
+            insights = get_insights(args.id)
+            if insights:
+                print("\nCaptured Insights:")
+                for i in insights:
+                    print(f"  * {i[0]}: {i[1]} ({i[2]})")
             print("-" * 30 + "\n")
+    elif args.command == "insight":
+        if args.add:
+            if not args.title or not args.content:
+                print("Error: --title and --content required for adding insight.")
+            else:
+                add_insight(args.id, args.title, args.content, args.url, args.tags)
+                print(f"Added insight to project '{args.id}'.")
+        else:
+            insights = get_insights(args.id)
+            for i in insights:
+                print(f"[{i[4]}] {i[0]}\nContent: {i[1]}\nSource: {i[2]}\nTags: {i[3]}\n")

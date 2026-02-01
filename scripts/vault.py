@@ -15,10 +15,10 @@ def init_db():
                  (id TEXT PRIMARY KEY, name TEXT, objective TEXT, status TEXT, created_at TEXT, priority INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS events
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, event_type TEXT, 
-                  step INTEGER, payload TEXT, confidence REAL, source TEXT, timestamp TEXT,
+                  step INTEGER, payload TEXT, confidence REAL, source TEXT, tags TEXT, timestamp TEXT,
                   FOREIGN KEY(project_id) REFERENCES projects(id))''')
     
-    # Migration: Add priority, confidence, and source columns if they don't exist
+    # Migration: Add priority, confidence, source, and tags columns if they don't exist
     c.execute("PRAGMA table_info(projects)")
     if 'priority' not in [col[1] for col in c.fetchall()]:
         c.execute("ALTER TABLE projects ADD COLUMN priority INTEGER DEFAULT 0")
@@ -29,6 +29,8 @@ def init_db():
         c.execute("ALTER TABLE events ADD COLUMN confidence REAL DEFAULT 1.0")
     if 'source' not in columns:
         c.execute("ALTER TABLE events ADD COLUMN source TEXT DEFAULT 'unknown'")
+    if 'tags' not in columns:
+        c.execute("ALTER TABLE events ADD COLUMN tags TEXT DEFAULT ''")
         
     c.execute('''CREATE TABLE IF NOT EXISTS search_cache
                  (query_hash TEXT PRIMARY KEY, query TEXT, result TEXT, timestamp TEXT)''')
@@ -79,16 +81,16 @@ def start_project(project_id, name, objective, priority=0):
     conn.close()
     print(f"Project '{name}' ({project_id}) initialized with priority {priority}.")
 
-def log_event(project_id, event_type, step, payload, confidence=1.0, source="unknown"):
+def log_event(project_id, event_type, step, payload, confidence=1.0, source="unknown", tags=""):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.now().isoformat()
-    c.execute("INSERT INTO events (project_id, event_type, step, payload, confidence, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-              (project_id, event_type, step, json.dumps(payload), confidence, source, now))
+    c.execute("INSERT INTO events (project_id, event_type, step, payload, confidence, source, tags, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              (project_id, event_type, step, json.dumps(payload), confidence, source, tags, now))
     conn.commit()
     conn.close()
 
-def get_status(project_id):
+def get_status(project_id, tag_filter=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT * FROM projects WHERE id=?", (project_id,))
@@ -96,7 +98,15 @@ def get_status(project_id):
     if not project:
         conn.close()
         return None
-    c.execute("SELECT event_type, step, payload, confidence, source, timestamp FROM events WHERE project_id=? ORDER BY id DESC LIMIT 10", (project_id,))
+    
+    query = "SELECT event_type, step, payload, confidence, source, timestamp, tags FROM events WHERE project_id=?"
+    params = [project_id]
+    if tag_filter:
+        query += " AND tags LIKE ?"
+        params.append(f"%{tag_filter}%")
+    query += " ORDER BY id DESC LIMIT 10"
+    
+    c.execute(query, params)
     events = c.fetchall()
     conn.close()
     return {"project": project, "recent_events": events}
@@ -176,10 +186,12 @@ if __name__ == "__main__":
     log_parser.add_argument("--payload", default="{}")
     log_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     log_parser.add_argument("--source", default="unknown", help="Source of the event (e.g. agent name)")
+    log_parser.add_argument("--tags", default="", help="Comma-separated tags for the event")
 
     # Status
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("--id", required=True)
+    status_parser.add_argument("--filter-tag", help="Filter events by tag")
 
     # Insights
     insight_parser = subparsers.add_parser("insight")
@@ -214,10 +226,10 @@ if __name__ == "__main__":
             else:
                 print("No cached result found.")
     elif args.command == "log":
-        log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source)
-        print(f"Logged {args.type} for {args.id} (conf: {args.conf}, source: {args.source})")
+        log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
+        print(f"Logged {args.type} for {args.id} (conf: {args.conf}, source: {args.source}, tags: {args.tags})")
     elif args.command == "status":
-        status = get_status(args.id)
+        status = get_status(args.id, tag_filter=args.filter_tag)
         if not status:
             print(f"Project '{args.id}' not found.")
         else:
@@ -226,9 +238,9 @@ if __name__ == "__main__":
             print(f"Status: {p[3].upper()}")
             print(f"Objective: {p[2]}")
             print(f"Created: {p[4]}")
-            print("\nRecent Events:")
+            print("\nRecent Events" + (f" (Filtered by tag: {args.filter_tag})" if args.filter_tag else "") + ":")
             for e in status['recent_events']:
-                print(f"  [{e[5]}] {e[0]} (Step {e[1]}) [Src: {e[4]}, Conf: {e[3]}]: {e[2]}")
+                print(f"  [{e[5]}] {e[0]} (Step {e[1]}) [Src: {e[4]}, Conf: {e[3]}, Tags: {e[6]}]: {e[2]}")
             
             insights = get_insights(args.id)
             if insights:

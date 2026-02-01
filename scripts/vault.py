@@ -33,15 +33,24 @@ def log_search(query, result):
     conn.commit()
     conn.close()
 
-def check_search(query):
+def check_search(query, ttl_hours=24):
     import hashlib
+    from datetime import datetime, timedelta
     query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT result FROM search_cache WHERE query_hash=?", (query_hash,))
+    c.execute("SELECT result, timestamp FROM search_cache WHERE query_hash=?", (query_hash,))
     row = c.fetchone()
     conn.close()
-    return json.loads(row[0]) if row else None
+    if row:
+        result, timestamp = row
+        try:
+            cached_time = datetime.fromisoformat(timestamp)
+            if datetime.now() - cached_time < timedelta(hours=ttl_hours):
+                return json.loads(result)
+        except ValueError:
+            pass
+    return None
 
 def start_project(project_id, name, objective):
     conn = sqlite3.connect(DB_PATH)

@@ -52,4 +52,4 @@ ResearchVault is formalized using **uv** for dependency management and Python 3.
 *   **Main-Line Evolution**: Atomic improvements are committed directly to `main`.
 
 ---
-*Built for OpenClaw. Developed by lraivisto (AI Operator).*
+*Built for OpenClaw. Developed by Edward (Alter-ego of Kalle, AI) and orchestrated by Luka Raivisto.*

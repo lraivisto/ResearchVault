@@ -112,16 +112,27 @@ def get_status(project_id, tag_filter=None):
     return {"project": project, "recent_events": events}
 
 def update_status(project_id, status=None, priority=None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    if status:
-        c.execute("UPDATE projects SET status=? WHERE id=?", (status, project_id))
-        print(f"Project '{project_id}' status updated to '{status}'.")
-    if priority is not None:
-        c.execute("UPDATE projects SET priority=? WHERE id=?", (priority, project_id))
-        print(f"Project '{project_id}' priority updated to {priority}.")
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        if status:
+            c.execute("UPDATE projects SET status=? WHERE id=?", (status, project_id))
+            if c.rowcount == 0:
+                print(f"Error: Project '{project_id}' not found.")
+            else:
+                print(f"Project '{project_id}' status updated to '{status}'.")
+        if priority is not None:
+            c.execute("UPDATE projects SET priority=? WHERE id=?", (priority, project_id))
+            if c.rowcount == 0:
+                print(f"Error: Project '{project_id}' not found.")
+            else:
+                print(f"Project '{project_id}' priority updated to {priority}.")
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def list_projects():
     conn = sqlite3.connect(DB_PATH)
@@ -170,7 +181,7 @@ if __name__ == "__main__":
     # Status Update
     update_parser = subparsers.add_parser("update")
     update_parser.add_argument("--id", required=True)
-    update_parser.add_argument("--status", choices=['active', 'paused', 'completed', 'failed'], required=True)
+    update_parser.add_argument("--status", choices=['active', 'paused', 'completed', 'failed'])
     update_parser.add_argument("--priority", type=int, help="Update project priority")
 
     # Search Cache

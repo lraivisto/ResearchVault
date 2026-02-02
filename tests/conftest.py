@@ -3,22 +3,35 @@ import sqlite3
 import os
 import scripts.db as db
 
+class ConnectionProxy:
+    def __init__(self, conn):
+        self.conn = conn
+    
+    def cursor(self):
+        return self.conn.cursor()
+        
+    def commit(self):
+        return self.conn.commit()
+        
+    def close(self):
+        # Do nothing to keep the connection open for tests
+        pass
+
 @pytest.fixture
 def db_conn(monkeypatch):
     """
     Creates an in-memory SQLite database for testing.
-    Monkeypatches scripts.db.get_connection to return this connection.
+    Monkeypatches scripts.db.get_connection to return a proxy that ignores close().
     """
-    # Create in-memory connection
     conn = sqlite3.connect(":memory:")
+    proxy = ConnectionProxy(conn)
     
-    # Mock the get_connection function in db module/other modules
     def mock_get_connection():
-        return conn
+        return proxy
         
     monkeypatch.setattr(db, "get_connection", mock_get_connection)
     
-    # Initialize schema
+    # Initialize schema using the proxy (which won't actually close it)
     db.init_db()
     
     yield conn

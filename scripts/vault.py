@@ -2,12 +2,20 @@ import sys
 import os
 import argparse
 import json
+from rich.console import Console
+from rich.table import Table
+from rich import box
+from rich.rule import Rule
+from rich.panel import Panel
 
 # Ensure we can import from the parent directory (scripts package)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import scripts.db as db
 import scripts.core as core
+import scripts.scuttle as scuttle_engine
+
+console = Console()
 
 if __name__ == "__main__":
     db.init_db()
@@ -30,10 +38,15 @@ if __name__ == "__main__":
     update_parser.add_argument("--status", choices=['active', 'paused', 'completed', 'failed'])
     update_parser.add_argument("--priority", type=int, help="Update project priority")
 
-    # Search Cache
-    cache_parser = subparsers.add_parser("cache")
-    cache_parser.add_argument("--query", required=True)
-    cache_parser.add_argument("--set-result")
+    # Scuttle (Ingestion)
+    scuttle_parser = subparsers.add_parser("scuttle")
+    scuttle_parser.add_argument("url", help="URL to scuttle")
+    scuttle_parser.add_argument("--id", required=True, help="Project ID")
+
+    # Search (Hybrid: Cache + Brave API)
+    search_parser = subparsers.add_parser("search")
+    search_parser.add_argument("--query", required=True)
+    search_parser.add_argument("--set-result")
 
     # Log
     log_parser = subparsers.add_parser("log")
@@ -67,44 +80,130 @@ if __name__ == "__main__":
     elif args.command == "list":
         projects = core.list_projects()
         if not projects:
-            print("No projects found.")
-        for p in projects:
-            print(f"[{p[3].upper()}] (P{p[5]}) {p[0]}: {p[1]} - {p[2]} ({p[4]})")
+            console.print("[yellow]No projects found.[/yellow]")
+        else:
+            table = Table(title="Research Vault Projects", box=box.ROUNDED)
+            table.add_column("ID", style="cyan", no_wrap=True)
+            table.add_column("Prior", style="magenta", justify="center")
+            table.add_column("Status", style="bold")
+            table.add_column("Name", style="green")
+            table.add_column("Objective")
+            
+            for p in projects:
+                # p: id, name, objective, status, created_at, priority
+                status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
+                table.add_row(
+                    p[0], 
+                    str(p[5]), 
+                    f"[{status_style}]{p[3].upper()}[/{status_style}]", 
+                    p[1], 
+                    p[2]
+                )
+            console.print(table)
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
-    elif args.command == "cache":
+    elif args.command == "scuttle":
+        try:
+            scuttler = scuttle_engine.get_scuttler(args.url)
+            console.print(f"[cyan]Scuttling {args.url}...[/cyan]")
+            result = scuttler.scuttle(args.url)
+            
+            core.log_event(
+                args.id, 
+                result['type'], 
+                0, 
+                {"title": result['title'], "content": result['content']}, 
+                result['confidence'], 
+                result['source'], 
+                result['tags']
+            )
+            console.print(f"[green]✔ Scuttled:[/green] {result['title']} ({result['source']})")
+        except scuttle_engine.ScuttleError as e:
+            console.print(f"[red]Scuttle failed:[/red] {e}")
+    elif args.command == "search":
         if args.set_result:
-            core.log_search(args.query, json.loads(args.set_result))
-            print(f"Cached result for: {args.query}")
+            # Agent Mode: Manual Injection
+            try:
+                result_data = json.loads(args.set_result)
+                core.log_search(args.query, result_data)
+                console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
+            except json.JSONDecodeError:
+                console.print("[red]Error: --set-result must be valid JSON.[/red]")
         else:
-            result = core.check_search(args.query)
-            if result:
-                print(json.dumps(result, indent=2))
+            # Standalone Mode: Check Cache -> API
+            cached = core.check_search(args.query)
+            if cached:
+                console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
+                console.print_json(data=cached)
             else:
-                print("No cached result found.")
+                try:
+                    console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
+                    result = core.perform_brave_search(args.query)
+                    core.log_search(args.query, result)
+                    console.print_json(data=result)
+                except core.MissingAPIKeyError:
+                    console.print(Panel(
+                        "[bold red]Active Search Unavailable[/bold red]\n\n"
+                        "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
+                        "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
+                        "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
+                        "[dim]Or provide a result manually via --set-result if you are an Agent.[/dim]",
+                        title="Setup Required",
+                        border_style="red"
+                    ))
+                except Exception as e:
+                    console.print(f"[red]Search failed:[/red] {e}")
     elif args.command == "log":
         core.log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
-        print(f"Logged {args.type} for {args.id} (conf: {args.conf}, source: {args.source}, tags: {args.tags})")
+        console.print(f"[green]✔ Logged[/green] [bold cyan]{args.type}[/] for [bold white]{args.id}[/] (conf: {args.conf}, src: {args.source})")
     elif args.command == "status":
+        from rich.panel import Panel
+        from rich.console import Group
+        
         status = core.get_status(args.id, tag_filter=args.filter_tag)
         if not status:
-            print(f"Project '{args.id}' not found.")
+            console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
             p = status['project']
-            print(f"\n--- Project: {p[1]} ({p[0]}) ---")
-            print(f"Status: {p[3].upper()}")
-            print(f"Objective: {p[2]}")
-            print(f"Created: {p[4]}")
-            print("\nRecent Events" + (f" (Filtered by tag: {args.filter_tag})" if args.filter_tag else "") + ":")
-            for e in status['recent_events']:
-                print(f"  [{e[5]}] {e[0]} (Step {e[1]}) [Src: {e[4]}, Conf: {e[3]}, Tags: {e[6]}]: {e[2]}")
+            # p: id, name, objective, status, created_at, priority
             
+            # Header Info
+            info_text = f"[bold white]{p[1]}[/bold white] [dim]({p[0]})[/dim]\n"
+            info_text += f"Status: [bold { 'green' if p[3]=='active' else 'red'}]{p[3].upper()}[/]\n"
+            info_text += f"Objective: {p[2]}\n"
+            info_text += f"Created: {p[4]}"
+            
+            # Event Table
+            event_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
+            event_table.add_column("Time", style="dim")
+            event_table.add_column("Source", style="cyan")
+            event_table.add_column("Type", style="yellow")
+            event_table.add_column("Conf", justify="right")
+            event_table.add_column("Data")
+            
+            for e in status['recent_events']:
+                # e: event_type, step, payload, confidence, source, timestamp, tags
+                conf_color = "green" if e[3] > 0.8 else "yellow" if e[3] > 0.5 else "red"
+                short_time = e[5].split("T")[1][:8]
+                event_table.add_row(
+                    short_time,
+                    e[4],
+                    e[0],
+                    f"[{conf_color}]{e[3]}[/]",
+                    e[2][:50] + "..." if len(e[2]) > 50 else e[2]
+                )
+            
+            # Insights Panel (if any)
             insights = core.get_insights(args.id)
             if insights:
-                print("\nCaptured Insights:")
+                insight_table = Table(box=box.SIMPLE, show_header=False)
                 for i in insights:
-                    print(f"  * {i[0]}: {i[1]} ({i[2]})")
-            print("-" * 30 + "\n")
+                    insight_table.add_row(f"💡 [bold]{i[0]}[/]: {i[1]}")
+                content = Group(info_text, Rule(style="white"), event_table, Rule(style="white"), insight_table)
+            else:
+                content = Group(info_text, Rule(style="white"), event_table)
+                
+            console.print(Panel(content, title=f"Research Vault Status: {p[1]}", border_style="blue"))
     elif args.command == "insight":
         if args.add:
             if not args.title or not args.content:

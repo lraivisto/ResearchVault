@@ -3,11 +3,57 @@ import sqlite3
 import hashlib
 import os
 import requests
+from typing import List, Optional, Dict, Any, Type
 from datetime import datetime, timedelta
 import scripts.db as db
+from scripts.scuttle import Connector, ArtifactDraft, IngestResult
 
 class MissingAPIKeyError(Exception):
     pass
+
+class IngestService:
+    """Service to manage connector registration and ingestion routing."""
+    
+    def __init__(self):
+        self._connectors: List[Connector] = []
+
+    def register_connector(self, connector: Connector):
+        self._connectors.append(connector)
+
+    def get_connector_for(self, source: str) -> Optional[Connector]:
+        for connector in self._connectors:
+            if connector.can_handle(source):
+                return connector
+        return None
+
+    def ingest(self, project_id: str, source: str) -> IngestResult:
+        connector = self.get_connector_for(source)
+        if not connector:
+            return IngestResult(success=False, error=f"No connector found for source: {source}")
+
+        try:
+            draft = connector.fetch(source)
+            # Add to database
+            add_insight(
+                project_id, 
+                draft.title, 
+                draft.content, 
+                source_url=source, 
+                tags=",".join(draft.tags)
+            )
+            # Log event
+            log_event(
+                project_id, 
+                "INGEST", 
+                "connector_fetch", 
+                draft.raw_payload or {"title": draft.title},
+                confidence=draft.confidence,
+                source=draft.source,
+                tags=",".join(draft.tags)
+            )
+            return IngestResult(success=True, metadata={"title": draft.title, "source": draft.source})
+        except Exception as e:
+            return IngestResult(success=False, error=str(e))
 
 def perform_brave_search(query):
     api_key = os.environ.get("BRAVE_API_KEY")
@@ -143,3 +189,14 @@ def get_insights(project_id, tag_filter=None):
     rows = c.fetchall()
     conn.close()
     return rows
+
+def get_ingest_service():
+    """Returns a pre-configured IngestService with all connectors registered."""
+    from scripts.scuttle import RedditScuttler, MoltbookScuttler, GrokipediaConnector, YouTubeConnector, WebScuttler
+    service = IngestService()
+    service.register_connector(RedditScuttler())
+    service.register_connector(MoltbookScuttler())
+    service.register_connector(GrokipediaConnector())
+    service.register_connector(YouTubeConnector())
+    service.register_connector(WebScuttler())
+    return service

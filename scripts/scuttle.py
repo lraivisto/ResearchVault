@@ -4,9 +4,12 @@ import argparse
 import sys
 import os
 
-# Ensure we can import vault.py from the same directory
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import vault
+# Ensure we can import from the parent directory (scripts package)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+import scripts.core as core
 
 def scuttle_scan(project_id, query, source_data, source_type):
     """
@@ -25,7 +28,7 @@ def scuttle_scan(project_id, query, source_data, source_type):
         confidence = 0.80
         tags.append("discussion")
 
-    vault.log_event(
+    core.log_event(
         project_id=project_id,
         event_type="SCAN_RESULT",
         step=0,

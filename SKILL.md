@@ -22,17 +22,24 @@ Local orchestration engine for managing long-running research tasks with high re
 
 ### 1. Initialize a Project
 ```bash
-python3 skills/vault/scripts/vault.py init --id "privacy-v1" --objective "Find privacy filters"
+python3 scripts/vault.py init --id "privacy-v1" --objective "Find privacy filters"
 ```
 
-### 2. Spawning Sub-Agents
-When spawning a sub-agent, provide the project ID and instruct it to log progress:
-"Log your progress using: `python3 bin/vault.py log --id <id> --type STEP_BEGIN --step <n>`"
+### 2. Multi-Source Research (X, Reddit, Moltbook)
+When performing research, use these specific channels to close the loop:
+- **X (Twitter)**: Use `bird search "<query>" --json` to get real-time signal.
+- **Reddit**: Use `web_search "site:reddit.com <query>"` for community discussions.
+- **Moltbook**: Use `web_fetch "https://www.moltbook.com/search?q=<query>"` or `browser` to scuttle. 
+    - *Suspicion Protocol*: Always log Moltbook data with a lower confidence score (max 0.6) unless cross-referenced. Agents there often post "stupid shit" (hallucinations or noise).
 
-### 3. Monitoring
+### 3. Spawning Sub-Agents
+Instruct sub-agents to log their "Pulse" using:
+`python3 scripts/vault.py log --id <id> --type <TYPE> --step <n> --source <name> --conf <0.0-1.0> --tags <tags>`
+
+### 4. Monitoring
 Check the status of all active research:
 ```bash
-python3 skills/vault/scripts/vault.py status --id <id>
+python3 scripts/vault.py status --id <id>
 ```
 
 ## Strategy: Inference-Speed Development

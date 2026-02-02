@@ -162,8 +162,37 @@ class WebScuttler(Scuttler):
         except Exception as e:
             raise ScuttleError(f"Web scuttle failed: {e}")
 
+class GrokipediaConnector(Connector):
+    def can_handle(self, source: str) -> bool:
+        return "grokipedia.com" in source or source.startswith("grokipedia://")
+
+    def fetch(self, source: str) -> ArtifactDraft:
+        # Extract slug from URL or ID
+        if "/" in source:
+            slug = source.split("/")[-1]
+        else:
+            slug = source
+            
+        api_url = f"https://grokipedia-api.com/page/{slug}"
+        try:
+            resp = requests.get(api_url, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            return ArtifactDraft(
+                title=data.get("title", slug),
+                content=data.get("content_text", ""),
+                source="grokipedia",
+                type="KNOWLEDGE_BASE",
+                confidence=0.95,
+                tags=["grokipedia", "knowledge-base"],
+                raw_payload=data
+            )
+        except Exception as e:
+            raise ScuttleError(f"Grokipedia fetch failed: {e}")
+
 def get_scuttler(url):
-    scuttlers = [RedditScuttler(), MoltbookScuttler(), WebScuttler()]
+    scuttlers = [RedditScuttler(), MoltbookScuttler(), GrokipediaConnector(), WebScuttler()]
     for s in scuttlers:
         if s.can_handle(url):
             return s

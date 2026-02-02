@@ -189,3 +189,13 @@ def get_insights(project_id, tag_filter=None):
     rows = c.fetchall()
     conn.close()
     return rows
+
+def get_ingest_service():
+    """Returns a pre-configured IngestService with all connectors registered."""
+    from scripts.scuttle import RedditScuttler, MoltbookScuttler, GrokipediaConnector, WebScuttler
+    service = IngestService()
+    service.register_connector(RedditScuttler())
+    service.register_connector(MoltbookScuttler())
+    service.register_connector(GrokipediaConnector())
+    service.register_connector(WebScuttler())
+    return service

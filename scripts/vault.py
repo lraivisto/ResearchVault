@@ -151,22 +151,16 @@ if __name__ == "__main__":
         core.update_status(args.id, args.status, args.priority)
     elif args.command == "scuttle":
         try:
-            scuttler = scuttle_engine.get_scuttler(args.url)
-            console.print(f"[cyan]Scuttling {args.url}...[/cyan]")
-            result = scuttler.scuttle(args.url)
+            service = core.get_ingest_service()
+            console.print(f"[cyan]Ingesting {args.url}...[/cyan]")
+            result = service.ingest(args.id, args.url)
             
-            core.log_event(
-                args.id, 
-                result['type'], 
-                0, 
-                {"title": result['title'], "content": result['content']}, 
-                result['confidence'], 
-                result['source'], 
-                result['tags']
-            )
-            console.print(f"[green]✔ Scuttled:[/green] {result['title']} ({result['source']})")
-        except scuttle_engine.ScuttleError as e:
-            console.print(f"[red]Scuttle failed:[/red] {e}")
+            if result.success:
+                console.print(f"[green]✔ Ingested:[/green] {result.metadata['title']} ({result.metadata['source']})")
+            else:
+                console.print(f"[red]Ingest failed:[/red] {result.error}")
+        except Exception as e:
+            console.print(f"[red]Error:[/red] {e}")
     elif args.command == "search":
         if args.set_result:
             # Agent Mode: Manual Injection

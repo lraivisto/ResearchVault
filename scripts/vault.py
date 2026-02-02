@@ -48,6 +48,7 @@ if __name__ == "__main__":
     scuttle_parser = subparsers.add_parser("scuttle")
     scuttle_parser.add_argument("url", help="URL to scuttle")
     scuttle_parser.add_argument("--id", required=True, help="Project ID")
+    scuttle_parser.add_argument("--tags", help="Additional comma-separated tags")
 
     # Search (Hybrid: Cache + Brave API)
     search_parser = subparsers.add_parser("search")
@@ -77,6 +78,7 @@ if __name__ == "__main__":
     insight_parser.add_argument("--content")
     insight_parser.add_argument("--url", default="")
     insight_parser.add_argument("--tags", default="")
+    insight_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
 
     # Interactive Insight Mode
@@ -168,10 +170,23 @@ if __name__ == "__main__":
         try:
             service = core.get_ingest_service()
             console.print(f"[cyan]Ingesting {args.url}...[/cyan]")
-            result = service.ingest(args.id, args.url)
+            
+            # Additional tags if provided
+            extra_tags = args.tags.split(",") if args.tags else []
+            
+            result = service.ingest(args.id, args.url, extra_tags=extra_tags)
             
             if result.success:
-                console.print(f"[green]✔ Ingested:[/green] {result.metadata['title']} ({result.metadata['source']})")
+                source_info = f"({result.metadata.get('source', 'unknown')})"
+                if "moltbook" in args.url or result.metadata.get('source') == "moltbook":
+                    console.print(Panel(
+                        f"[bold yellow]SUSPICION PROTOCOL ACTIVE[/bold yellow]\n\n"
+                        f"✔ Ingested: {result.metadata['title']} {source_info}\n"
+                        f"Note: Moltbook data is marked low-confidence (0.55) by default.",
+                        border_style="yellow"
+                    ))
+                else:
+                    console.print(f"[green]✔ Ingested:[/green] {result.metadata['title']} {source_info}")
             else:
                 console.print(f"[red]Ingest failed:[/red] {result.error}")
         except Exception as e:
@@ -280,7 +295,7 @@ if __name__ == "__main__":
             if not args.title or not args.content:
                 print("Error: --title and --content required for adding insight.")
             else:
-                core.add_insight(args.id, args.title, args.content, args.url, args.tags)
+                core.add_insight(args.id, args.title, args.content, args.url, args.tags, confidence=args.conf)
                 print(f"Added insight to project '{args.id}'.")
         else:
             insights = core.get_insights(args.id, tag_filter=args.filter_tag)

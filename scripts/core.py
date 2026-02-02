@@ -26,20 +26,26 @@ class IngestService:
                 return connector
         return None
 
-    def ingest(self, project_id: str, source: str) -> IngestResult:
+    def ingest(self, project_id: str, source: str, extra_tags: List[str] = None) -> IngestResult:
         connector = self.get_connector_for(source)
         if not connector:
             return IngestResult(success=False, error=f"No connector found for source: {source}")
 
         try:
             draft = connector.fetch(source)
+            
+            # Merge tags
+            all_tags = draft.tags
+            if extra_tags:
+                all_tags.extend([t for t in extra_tags if t not in all_tags])
+            
             # Add to database (Finding table)
             add_insight(
                 project_id, 
                 draft.title, 
                 draft.content, 
                 source_url=source, 
-                tags=",".join(draft.tags),
+                tags=",".join(all_tags),
                 confidence=draft.confidence
             )
             # Log event
@@ -50,7 +56,7 @@ class IngestService:
                 draft.raw_payload or {"title": draft.title},
                 confidence=draft.confidence,
                 source=draft.source,
-                tags=",".join(draft.tags)
+                tags=",".join(all_tags)
             )
             return IngestResult(success=True, metadata={"title": draft.title, "source": draft.source})
         except Exception as e:

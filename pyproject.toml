@@ -2,6 +2,9 @@
 name = "research-vault"
 version = "1.1.0"
 description = "Local-first orchestration engine for high-velocity AI research"
+authors = [
+    { name = "lraivisto", email = "lraivisto@outlook.com" }
+]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

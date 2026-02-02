@@ -29,6 +29,12 @@ if __name__ == "__main__":
     init_parser.add_argument("--objective", required=True)
     init_parser.add_argument("--priority", type=int, default=0)
 
+    # Export
+    export_parser = subparsers.add_parser("export")
+    export_parser.add_argument("--id", required=True)
+    export_parser.add_argument("--format", choices=['json', 'markdown'], default='json')
+    export_parser.add_argument("--output", help="Output file path")
+
     # List
     list_parser = subparsers.add_parser("list")
 
@@ -77,6 +83,47 @@ if __name__ == "__main__":
 
     if args.command == "init":
         core.start_project(args.id, args.name or args.id, args.objective, args.priority)
+    elif args.command == "export":
+        data = core.get_status(args.id)
+        if not data:
+            console.print(f"[red]Project '{args.id}' not found.[/red]")
+        else:
+            insights = core.get_insights(args.id)
+            export_data = {
+                "project": {
+                    "id": data['project'][0],
+                    "name": data['project'][1],
+                    "objective": data['project'][2],
+                    "status": data['project'][3],
+                    "priority": data['project'][5]
+                },
+                "insights": [
+                    {"title": i[0], "content": i[1], "source": i[2], "tags": i[3], "timestamp": i[4]}
+                    for i in insights
+                ]
+            }
+            output = ""
+            if args.format == 'json':
+                output = json.dumps(export_data, indent=2)
+            else:
+                p = export_data['project']
+                output = f"# Research Vault: {p['name']}\n\n"
+                output += f"**Objective:** {p['objective']}\n"
+                output += f"**Status:** {p['status']}\n\n"
+                output += "## Insights\n\n"
+                for i in export_data['insights']:
+                    output += f"### {i['title']}\n"
+                    output += f"- **Source:** {i['source']}\n"
+                    output += f"- **Tags:** {i['tags']}\n"
+                    output += f"- **Date:** {i['timestamp']}\n\n"
+                    output += f"{i['content']}\n\n---\n\n"
+            
+            if args.output:
+                with open(args.output, 'w') as f:
+                    f.write(output)
+                console.print(f"[green]✔ Exported to {args.output}[/green]")
+            else:
+                print(output)
     elif args.command == "list":
         projects = core.list_projects()
         if not projects:

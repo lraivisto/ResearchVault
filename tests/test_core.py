@@ -57,3 +57,20 @@ def test_search_cache(db_conn):
     core.log_search(query, result)
     cached = core.check_search(query)
     assert cached == result
+
+def test_insights_to_findings(db_conn):
+    """Test that insights are correctly stored in and retrieved from the findings table."""
+    core.start_project("p1", "Project 1", "Obj")
+    
+    # Add an insight (which should go to 'findings' table)
+    core.add_insight("p1", "Insight 1", "Content 1", source_url="http://test.com", tags="t1", confidence=0.8)
+    
+    # Retrieve insights
+    insights = core.get_insights("p1")
+    
+    assert len(insights) == 1
+    assert insights[0][0] == "Insight 1"
+    assert insights[0][1] == "Content 1"
+    assert json.loads(insights[0][2]) == {"source_url": "http://test.com"}
+    assert insights[0][3] == "t1"
+    assert insights[0][5] == 0.8

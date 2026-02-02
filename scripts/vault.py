@@ -100,11 +100,23 @@ if __name__ == "__main__":
                     "status": data['project'][3],
                     "priority": data['project'][5]
                 },
-                "insights": [
-                    {"title": i[0], "content": i[1], "source": i[2], "tags": i[3], "timestamp": i[4]}
-                    for i in insights
-                ]
+                "findings": []
             }
+            for i in insights:
+                evidence = {}
+                try:
+                    evidence = json.loads(i[2])
+                except:
+                    pass
+                export_data["findings"].append({
+                    "title": i[0], 
+                    "content": i[1], 
+                    "source_url": evidence.get("source_url", ""), 
+                    "tags": i[3], 
+                    "timestamp": i[4],
+                    "confidence": i[5]
+                })
+
             output = ""
             if args.format == 'json':
                 output = json.dumps(export_data, indent=2)
@@ -113,13 +125,13 @@ if __name__ == "__main__":
                 output = f"# Research Vault: {p['name']}\n\n"
                 output += f"**Objective:** {p['objective']}\n"
                 output += f"**Status:** {p['status']}\n\n"
-                output += "## Insights\n\n"
-                for i in export_data['insights']:
-                    output += f"### {i['title']}\n"
-                    output += f"- **Source:** {i['source']}\n"
-                    output += f"- **Tags:** {i['tags']}\n"
-                    output += f"- **Date:** {i['timestamp']}\n\n"
-                    output += f"{i['content']}\n\n---\n\n"
+                output += "## Findings\n\n"
+                for f in export_data['findings']:
+                    output += f"### {f['title']} (Conf: {f['confidence']})\n"
+                    output += f"- **Source:** {f['source_url']}\n"
+                    output += f"- **Tags:** {f['tags']}\n"
+                    output += f"- **Date:** {f['timestamp']}\n\n"
+                    output += f"{f['content']}\n\n---\n\n"
             
             if args.output:
                 with open(args.output, 'w') as f:
@@ -256,8 +268,13 @@ if __name__ == "__main__":
                 if title.lower() in ['exit', 'quit']: break
                 content = console.input("[bold yellow]Content[/]: ").strip()
                 tags = console.input("[bold yellow]Tags (comma-separated)[/]: ").strip()
+                conf_str = console.input("[bold yellow]Confidence (0.0-1.0)[/]: ").strip()
+                try:
+                    conf = float(conf_str) if conf_str else 1.0
+                except ValueError:
+                    conf = 1.0
                 
-                core.add_insight(args.id, title, content, "", tags)
+                core.add_insight(args.id, title, content, "", tags, confidence=conf)
                 console.print("[green]✔ Added.[/green]\n")
         elif args.add:
             if not args.title or not args.content:
@@ -270,4 +287,10 @@ if __name__ == "__main__":
             if not insights:
                 print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
             for i in insights:
-                print(f"[{i[4]}] {i[0]}\nContent: {i[1]}\nSource: {i[2]}\nTags: {i[3]}\n")
+                evidence = {}
+                try:
+                    evidence = json.loads(i[2])
+                except:
+                    pass
+                source = evidence.get("source_url", "unknown")
+                print(f"[{i[4]}] {i[0]} (Conf: {i[5]})\nContent: {i[1]}\nSource: {source}\nTags: {i[3]}\n")

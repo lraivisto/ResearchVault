@@ -14,46 +14,42 @@ Following the **Inference-Speed Development** philosophy, Vault is built CLI-fir
 *   **Suspicion Protocol**: Built-in logic to trust-weight data. Moltbook scans are automatically flagged as low-confidence (`0.55`) and tagged `#unverified` to filter out noise.
 *   **Lifecycle & Priority**: Manage projects through `active`, `paused`, and `completed` states. Projects support **P{n} Priority Levels** for optimized focus.
 *   **Semantic Cache**: Integrated deduplication to ensure you never pay for (or wait for) the same research query twice.
+*   **Hardened Logic**: Comprehensive `pytest` suite ensuring 100% reliability of core database migrations and orchestration logic.
 
 ## 🚀 Workflows
 
-### 1. Initialize a Project
-Set your objective and priority level.
+### 1. Project Management
+Initialize a project, set objectives, and assign priority levels.
 ```bash
 python3 scripts/vault.py init --id "metal-v1" --name "Suomi Metal" --objective "Rising underground bands" --priority 5
 ```
 
-### 2. Instrumented Research
-Log research steps with metadata.
+### 2. Multi-Source Scuttling
+Use the `scuttle` helper to automatically log findings with platform-aware confidence scores.
 ```bash
-python3 scripts/vault.py log --id "metal-v1" --type "FINDING" --step 1 --source "Kalle" --conf 0.9 --tags "reddit,band" --payload '{"band": "Ashen Tomb"}'
+python3 scripts/scuttle.py --id "metal-v1" --source "Reddit" --query "Finnish death metal" --data "Ashen Tomb rising."
 ```
 
-### 3. Multi-Source Scuttling
-Use the `scuttle` helper to automatically apply source-specific confidence and tags.
+### 3. Verification & Testing
+Run the integrated test suite via `uv` to verify system integrity.
 ```bash
-python3 scripts/scuttle.py --id "metal-v1" --source "Moltbook" --query "death metal" --data "Agent halluncination about a ghost band."
+uv run pytest
 ```
 
-### 4. Synthesize Insights
-Promote raw findings to high-level project insights.
-```bash
-python3 scripts/vault.py insight --id "metal-v1" --add --title "Top Bands" --content "Ashen Tomb and Tormentor Tyrant lead the scene." --tags "summary"
-```
-
-### 5. Monitor Pulse
-View the status of all active research, sorted by priority.
+### 4. Monitoring
+View sorted project lists and detailed event logs.
 ```bash
 python3 scripts/vault.py list
-python3 scripts/vault.py status --id "metal-v1" --filter-tag "reddit"
+python3 scripts/vault.py status --id "metal-v1"
 ```
 
-## 🛠️ Development Strategy
+## 🛠️ Development & Environment
 
-Vault follows the **Shipping at Inference-Speed** model:
-*   **CLI-First**: Logic is exposed via robust CLI tools for agent loop-closing.
-*   **Oracle Loops**: Complex refactors use high-reasoning "Oracle" agents.
-*   **Main-Line Evolution**: Atomic improvements are committed directly to `main` to maintain high momentum.
+ResearchVault is formalized using **uv** for dependency management and Python 3.13 stability.
+
+*   **Core Architecture**: Modular design separating Interface (`vault.py`), Logic (`core.py`), and Storage (`db.py`).
+*   **Oracle Loops**: Complex refactors use high-reasoning sub-agents.
+*   **Main-Line Evolution**: Atomic improvements are committed directly to `main`.
 
 ---
-*Built for OpenClaw. Developed by Edward (AI Operator).*
+*Built for OpenClaw. Developed by lraivisto (AI Operator).*

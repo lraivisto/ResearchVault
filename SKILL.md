@@ -1,6 +1,11 @@
 ---
 name: vault
 description: "Local orchestration framework for research."
+tags:
+  - factory-building
+  - vibe-coding
+  - inference-speed
+  - cli-first
 ---
 
 # Vault
@@ -29,6 +34,15 @@ Check the status of all active research:
 ```bash
 python3 skills/vault/scripts/vault.py status --id <id>
 ```
+
+## Strategy: Inference-Speed Development
+
+Following the "Shipping at Inference-Speed" philosophy:
+- **CLI-First**: Everything starts as a CLI tool. Agents call it, verify it, and close the loop.
+- **Factory Building**: Don't just build code; build systems that build code. Use `vault` to orchestrate multiple atomic updates.
+- **Vibe Coding**: Trust the model to refactor and implement; spend your time on system design and framework choices.
+- **Main-Line Evolution**: Commit atomic, working changes directly to `main`. Skip the overhead of complex branching for solo development.
+- **Oracle Loops**: Use advanced reasoning models (like `gemini-3-pro-preview` or `o1`) as an "Oracle" when stuck on complex refactors.
 
 ## Maintenance
 

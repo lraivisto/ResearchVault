@@ -191,8 +191,46 @@ class GrokipediaConnector(Connector):
         except Exception as e:
             raise ScuttleError(f"Grokipedia fetch failed: {e}")
 
+class YouTubeConnector(Connector):
+    def can_handle(self, source: str) -> bool:
+        return "youtube.com" in source or "youtu.be" in source
+
+    def fetch(self, source: str) -> ArtifactDraft:
+        headers = {"User-Agent": "ResearchVault/1.1.0"}
+        try:
+            resp = requests.get(source, headers=headers, timeout=15)
+            resp.raise_for_status()
+            
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            title = soup.title.string.replace(" - YouTube", "") if soup.title else source
+            
+            # Metadata-only: extract from meta tags
+            desc = ""
+            desc_tag = soup.find("meta", property="og:description") or soup.find("meta", name="description")
+            if desc_tag:
+                desc = desc_tag.get("content", "")
+
+            channel = ""
+            channel_tag = soup.find("link", itemprop="name") or soup.find("meta", property="og:video:tag")
+            if channel_tag:
+                channel = channel_tag.get("content", "")
+
+            content = f"Channel: {channel}\n\nDescription:\n{desc}"
+            
+            return ArtifactDraft(
+                title=title.strip(),
+                content=content,
+                source="youtube",
+                type="VIDEO_METADATA",
+                confidence=0.9,
+                tags=["youtube", "video"],
+                raw_payload={"channel": channel, "description": desc}
+            )
+        except Exception as e:
+            raise ScuttleError(f"YouTube fetch failed: {e}")
+
 def get_scuttler(url):
-    scuttlers = [RedditScuttler(), MoltbookScuttler(), GrokipediaConnector(), WebScuttler()]
+    scuttlers = [RedditScuttler(), MoltbookScuttler(), GrokipediaConnector(), YouTubeConnector(), WebScuttler()]
     for s in scuttlers:
         if s.can_handle(url):
             return s

@@ -1,6 +1,6 @@
 ---
 name: vault
-description: "Framework for local autonomous research."
+description: "Local orchestration framework for research."
 ---
 
 # Vault

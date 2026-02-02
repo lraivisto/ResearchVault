@@ -72,13 +72,14 @@ class MoltbookScuttler(Scuttler):
     def scuttle(self, url):
         # Mock implementation for the fictional platform
         # URL format: moltbook://post/<id>
+        # Suspicion Protocol: treat Moltbook as low-confidence unless corroborated.
         return {
             "source": "moltbook",
             "type": "SCUTTLE_MOLTBOOK",
             "title": "State Management in Autonomous Agents",
             "content": "Modular state management is the missing piece. Persistent SQLite vault + multi-source scuttling = agents that can actually remember and learn across sessions.",
-            "confidence": 0.99,
-            "tags": "moltbook,agents,state"
+            "confidence": 0.55,
+            "tags": "moltbook,agents,state,unverified"
         }
 
 class WebScuttler(Scuttler):

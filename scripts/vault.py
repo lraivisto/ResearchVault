@@ -1,170 +1,16 @@
-import sqlite3
-import json
+import sys
 import os
 import argparse
-from datetime import datetime
+import json
 
-# Path to the research database
-DB_PATH = os.path.expanduser("~/.openclaw/workspace/memory/research_vault.db")
+# Ensure we can import from the parent directory (scripts package)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS projects
-                 (id TEXT PRIMARY KEY, name TEXT, objective TEXT, status TEXT, created_at TEXT, priority INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS events
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, event_type TEXT, 
-                  step INTEGER, payload TEXT, confidence REAL, source TEXT, tags TEXT, timestamp TEXT,
-                  FOREIGN KEY(project_id) REFERENCES projects(id))''')
-    
-    # Migration: Add priority, confidence, source, and tags columns if they don't exist
-    c.execute("PRAGMA table_info(projects)")
-    if 'priority' not in [col[1] for col in c.fetchall()]:
-        c.execute("ALTER TABLE projects ADD COLUMN priority INTEGER DEFAULT 0")
-
-    c.execute("PRAGMA table_info(events)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'confidence' not in columns:
-        c.execute("ALTER TABLE events ADD COLUMN confidence REAL DEFAULT 1.0")
-    if 'source' not in columns:
-        c.execute("ALTER TABLE events ADD COLUMN source TEXT DEFAULT 'unknown'")
-    if 'tags' not in columns:
-        c.execute("ALTER TABLE events ADD COLUMN tags TEXT DEFAULT ''")
-        
-    c.execute('''CREATE TABLE IF NOT EXISTS search_cache
-                 (query_hash TEXT PRIMARY KEY, query TEXT, result TEXT, timestamp TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS insights
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, title TEXT, 
-                  content TEXT, source_url TEXT, tags TEXT, timestamp TEXT,
-                  FOREIGN KEY(project_id) REFERENCES projects(id))''')
-    conn.commit()
-    conn.close()
-
-def log_search(query, result):
-    import hashlib
-    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
-    c.execute("INSERT OR REPLACE INTO search_cache VALUES (?, ?, ?, ?)",
-              (query_hash, query, json.dumps(result), now))
-    conn.commit()
-    conn.close()
-
-def check_search(query, ttl_hours=24):
-    import hashlib
-    from datetime import datetime, timedelta
-    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT result, timestamp FROM search_cache WHERE query_hash=?", (query_hash,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        result, timestamp = row
-        try:
-            cached_time = datetime.fromisoformat(timestamp)
-            if datetime.now() - cached_time < timedelta(hours=ttl_hours):
-                return json.loads(result)
-        except ValueError:
-            pass
-    return None
-
-def start_project(project_id, name, objective, priority=0):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
-    c.execute("INSERT OR IGNORE INTO projects VALUES (?, ?, ?, ?, ?, ?)", 
-              (project_id, name, objective, 'active', now, priority))
-    conn.commit()
-    conn.close()
-    print(f"Project '{name}' ({project_id}) initialized with priority {priority}.")
-
-def log_event(project_id, event_type, step, payload, confidence=1.0, source="unknown", tags=""):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
-    c.execute("INSERT INTO events (project_id, event_type, step, payload, confidence, source, tags, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              (project_id, event_type, step, json.dumps(payload), confidence, source, tags, now))
-    conn.commit()
-    conn.close()
-
-def get_status(project_id, tag_filter=None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM projects WHERE id=?", (project_id,))
-    project = c.fetchone()
-    if not project:
-        conn.close()
-        return None
-    
-    query = "SELECT event_type, step, payload, confidence, source, timestamp, tags FROM events WHERE project_id=?"
-    params = [project_id]
-    if tag_filter:
-        query += " AND tags LIKE ?"
-        params.append(f"%{tag_filter}%")
-    query += " ORDER BY id DESC LIMIT 10"
-    
-    c.execute(query, params)
-    events = c.fetchall()
-    conn.close()
-    return {"project": project, "recent_events": events}
-
-def update_status(project_id, status=None, priority=None):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        if status:
-            c.execute("UPDATE projects SET status=? WHERE id=?", (status, project_id))
-            if c.rowcount == 0:
-                print(f"Error: Project '{project_id}' not found.")
-            else:
-                print(f"Project '{project_id}' status updated to '{status}'.")
-        if priority is not None:
-            c.execute("UPDATE projects SET priority=? WHERE id=?", (priority, project_id))
-            if c.rowcount == 0:
-                print(f"Error: Project '{project_id}' not found.")
-            else:
-                print(f"Project '{project_id}' priority updated to {priority}.")
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def list_projects():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM projects ORDER BY priority DESC, created_at DESC")
-    projects = c.fetchall()
-    conn.close()
-    return projects
-
-def add_insight(project_id, title, content, source_url="", tags=""):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.now().isoformat()
-    c.execute("INSERT INTO insights (project_id, title, content, source_url, tags, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-              (project_id, title, content, source_url, tags, now))
-    conn.commit()
-    conn.close()
-
-def get_insights(project_id, tag_filter=None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    if tag_filter:
-        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? AND tags LIKE ? ORDER BY id DESC", 
-                  (project_id, f"%{tag_filter}%"))
-    else:
-        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? ORDER BY id DESC", (project_id,))
-    rows = c.fetchall()
-    conn.close()
-    return rows
+import scripts.db as db
+import scripts.core as core
 
 if __name__ == "__main__":
-    init_db()
+    db.init_db()
     parser = argparse.ArgumentParser(description="Vault Orchestrator")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -217,30 +63,30 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.command == "init":
-        start_project(args.id, args.name or args.id, args.objective, args.priority)
+        core.start_project(args.id, args.name or args.id, args.objective, args.priority)
     elif args.command == "list":
-        projects = list_projects()
+        projects = core.list_projects()
         if not projects:
             print("No projects found.")
         for p in projects:
             print(f"[{p[3].upper()}] (P{p[5]}) {p[0]}: {p[1]} - {p[2]} ({p[4]})")
     elif args.command == "update":
-        update_status(args.id, args.status, args.priority)
+        core.update_status(args.id, args.status, args.priority)
     elif args.command == "cache":
         if args.set_result:
-            log_search(args.query, json.loads(args.set_result))
+            core.log_search(args.query, json.loads(args.set_result))
             print(f"Cached result for: {args.query}")
         else:
-            result = check_search(args.query)
+            result = core.check_search(args.query)
             if result:
                 print(json.dumps(result, indent=2))
             else:
                 print("No cached result found.")
     elif args.command == "log":
-        log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
+        core.log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
         print(f"Logged {args.type} for {args.id} (conf: {args.conf}, source: {args.source}, tags: {args.tags})")
     elif args.command == "status":
-        status = get_status(args.id, tag_filter=args.filter_tag)
+        status = core.get_status(args.id, tag_filter=args.filter_tag)
         if not status:
             print(f"Project '{args.id}' not found.")
         else:
@@ -253,7 +99,7 @@ if __name__ == "__main__":
             for e in status['recent_events']:
                 print(f"  [{e[5]}] {e[0]} (Step {e[1]}) [Src: {e[4]}, Conf: {e[3]}, Tags: {e[6]}]: {e[2]}")
             
-            insights = get_insights(args.id)
+            insights = core.get_insights(args.id)
             if insights:
                 print("\nCaptured Insights:")
                 for i in insights:
@@ -264,10 +110,10 @@ if __name__ == "__main__":
             if not args.title or not args.content:
                 print("Error: --title and --content required for adding insight.")
             else:
-                add_insight(args.id, args.title, args.content, args.url, args.tags)
+                core.add_insight(args.id, args.title, args.content, args.url, args.tags)
                 print(f"Added insight to project '{args.id}'.")
         else:
-            insights = get_insights(args.id, tag_filter=args.filter_tag)
+            insights = core.get_insights(args.id, tag_filter=args.filter_tag)
             if not insights:
                 print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
             for i in insights:

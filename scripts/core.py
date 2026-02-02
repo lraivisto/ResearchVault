@@ -1,8 +1,29 @@
 import json
 import sqlite3
 import hashlib
+import os
+import requests
 from datetime import datetime, timedelta
 import scripts.db as db
+
+class MissingAPIKeyError(Exception):
+    pass
+
+def perform_brave_search(query):
+    api_key = os.environ.get("BRAVE_API_KEY")
+    if not api_key:
+        raise MissingAPIKeyError("BRAVE_API_KEY not found in environment variables.")
+        
+    url = "https://api.search.brave.com/res/v1/web/search"
+    headers = {
+        "X-Subscription-Token": api_key,
+        "Accept": "application/json"
+    }
+    params = {"q": query}
+    
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+    return response.json()
 
 def log_search(query, result):
     query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()

@@ -33,13 +33,14 @@ class IngestService:
 
         try:
             draft = connector.fetch(source)
-            # Add to database
+            # Add to database (Finding table)
             add_insight(
                 project_id, 
                 draft.title, 
                 draft.content, 
                 source_url=source, 
-                tags=",".join(draft.tags)
+                tags=",".join(draft.tags),
+                confidence=draft.confidence
             )
             # Log event
             log_event(
@@ -169,23 +170,31 @@ def list_projects():
     conn.close()
     return projects
 
-def add_insight(project_id, title, content, source_url="", tags=""):
+def add_insight(project_id, title, content, source_url="", tags="", confidence=1.0):
     conn = db.get_connection()
     c = conn.cursor()
     now = datetime.now().isoformat()
-    c.execute("INSERT INTO insights (project_id, title, content, source_url, tags, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-              (project_id, title, content, source_url, tags, now))
+    # Migration v2 uses 'findings' table. Insights table is legacy.
+    import uuid
+    import json
+    finding_id = f"fnd_{uuid.uuid4().hex[:8]}"
+    evidence = json.dumps({"source_url": source_url})
+    
+    c.execute('''INSERT INTO findings (id, project_id, title, content, evidence, confidence, tags, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+              (finding_id, project_id, title, content, evidence, confidence, tags, now))
     conn.commit()
     conn.close()
 
 def get_insights(project_id, tag_filter=None):
     conn = db.get_connection()
     c = conn.cursor()
+    # Migration v2 uses 'findings' table.
     if tag_filter:
-        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? AND tags LIKE ? ORDER BY id DESC", 
+        c.execute("SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? AND tags LIKE ? ORDER BY created_at DESC", 
                   (project_id, f"%{tag_filter}%"))
     else:
-        c.execute("SELECT title, content, source_url, tags, timestamp FROM insights WHERE project_id=? ORDER BY id DESC", (project_id,))
+        c.execute("SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? ORDER BY created_at DESC", (project_id,))
     rows = c.fetchall()
     conn.close()
     return rows

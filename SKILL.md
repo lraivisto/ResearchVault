@@ -1,5 +1,5 @@
 ---
-name: research-vault
+name: vault
 description: "Local orchestration framework for research."
 ---
 

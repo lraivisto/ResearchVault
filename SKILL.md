@@ -1,6 +1,6 @@
 ---
-name: vault
-description: Local orchestration framework for autonomous research. Use to initialize research projects, track multi-agent progress via a SQLite vault, and synthesize findings from background sub-agents. Triggers on: research orchestration, multi-agent tracking, persistent research state, autonomous investigation.
+name: research-vault
+description: "Local orchestration framework for research."
 ---
 
 # Vault

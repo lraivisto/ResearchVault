@@ -69,7 +69,7 @@ if __name__ == "__main__":
     status_parser.add_argument("--id", required=True)
     status_parser.add_argument("--filter-tag", help="Filter events by tag")
 
-    # Insights
+    # Insight
     insight_parser = subparsers.add_parser("insight")
     insight_parser.add_argument("--id", required=True)
     insight_parser.add_argument("--add", action="store_true")
@@ -78,6 +78,9 @@ if __name__ == "__main__":
     insight_parser.add_argument("--url", default="")
     insight_parser.add_argument("--tags", default="")
     insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
+
+    # Interactive Insight Mode
+    insight_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive session to add multiple insights")
 
     args = parser.parse_args()
 
@@ -246,7 +249,17 @@ if __name__ == "__main__":
                 
             console.print(Panel(content, title=f"Research Vault Status: {p[1]}", border_style="blue"))
     elif args.command == "insight":
-        if args.add:
+        if args.interactive:
+            console.print(Panel(f"Interactive Insight Mode for [bold cyan]{args.id}[/bold cyan]\nType [bold red]exit[/] to finish.", border_style="green"))
+            while True:
+                title = console.input("[bold yellow]Title[/]: ").strip()
+                if title.lower() in ['exit', 'quit']: break
+                content = console.input("[bold yellow]Content[/]: ").strip()
+                tags = console.input("[bold yellow]Tags (comma-separated)[/]: ").strip()
+                
+                core.add_insight(args.id, title, content, "", tags)
+                console.print("[green]✔ Added.[/green]\n")
+        elif args.add:
             if not args.title or not args.content:
                 print("Error: --title and --content required for adding insight.")
             else:

@@ -1,3 +1,6 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -6,13 +9,57 @@ import json
 class ScuttleError(Exception):
     pass
 
-class Scuttler:
-    """Abstract base class for source-specific scuttlers."""
-    def can_handle(self, url):
+@dataclass
+class ArtifactDraft:
+    """Draft of a research artifact before ingestion."""
+    title: str
+    content: str
+    source: str
+    type: str
+    confidence: float = 1.0
+    tags: List[str] = field(default_factory=list)
+    raw_payload: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class IngestResult:
+    """Result of an ingestion operation."""
+    success: bool
+    artifact_id: Optional[str] = None
+    error: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+class Connector(ABC):
+    """Abstract base class for research data connectors."""
+    
+    @abstractmethod
+    def can_handle(self, source: str) -> bool:
+        """Return True if this connector can handle the given source (URL or ID)."""
+        pass
+
+    @abstractmethod
+    def fetch(self, source: str) -> ArtifactDraft:
+        """Fetch and parse content into an ArtifactDraft."""
+        pass
+
+class Scuttler(Connector):
+    """Bridge for legacy Scuttler classes."""
+    def can_handle(self, url: str) -> bool:
         return False
 
-    def scuttle(self, url):
-        """Returns a dict with: source, type, title, content, confidence, tags"""
+    def fetch(self, url: str) -> ArtifactDraft:
+        data = self.scuttle(url)
+        return ArtifactDraft(
+            title=data["title"],
+            content=data["content"],
+            source=data["source"],
+            type=data["type"],
+            confidence=data["confidence"],
+            tags=data.get("tags", "").split(",") if isinstance(data.get("tags"), str) else data.get("tags", [])
+        )
+
+    @abstractmethod
+    def scuttle(self, url: str) -> Dict[str, Any]:
+        """Legacy scuttle method returning a dict."""
         raise NotImplementedError
 
 class RedditScuttler(Scuttler):

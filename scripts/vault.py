@@ -84,6 +84,10 @@ if __name__ == "__main__":
     # Interactive Insight Mode
     insight_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive session to add multiple insights")
 
+    # Summary
+    summary_parser = subparsers.add_parser("summary")
+    summary_parser.add_argument("--id", required=True)
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -166,6 +170,23 @@ if __name__ == "__main__":
             console.print(table)
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
+    elif args.command == "summary":
+        status = core.get_status(args.id)
+        if not status:
+            console.print(f"[red]Project '{args.id}' not found.[/red]")
+        else:
+            p = status['project']
+            insights = core.get_insights(args.id)
+            events = status['recent_events']
+            
+            console.print(Panel(
+                f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
+                f"[bold cyan]Objective:[/] {p[2]}\n"
+                f"[bold cyan]Insights:[/] {len(insights)}\n"
+                f"[bold cyan]Events logged:[/] {len(events)}",
+                title="Vault Quick Summary",
+                border_style="magenta"
+            ))
     elif args.command == "scuttle":
         try:
             service = core.get_ingest_service()

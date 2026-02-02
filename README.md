@@ -9,38 +9,49 @@ Following the **Inference-Speed Development** philosophy, Vault is built CLI-fir
 ## ✨ Core Features
 
 *   **The Vault (SQLite)**: A persistent, local ledger for queries, events, and findings. 100% private.
-*   **Instrumentation 2.0**: Every research event tracks **Confidence** (0.0-1.0), **Source** (identifying specific agents/components), and **Tags** for granular filtering.
-*   **Multi-Source Scuttling**: Specialized support for pulling signal from **X (Twitter)**, **Reddit**, and **Moltbook**.
-*   **Suspicion Protocol**: Built-in logic to trust-weight data. Moltbook scans are automatically flagged as low-confidence (`0.55`) and tagged `#unverified` to filter out noise.
-*   **Lifecycle & Priority**: Manage projects through `active`, `paused`, and `completed` states. Projects support **P{n} Priority Levels** for optimized focus.
-*   **Semantic Cache**: Integrated deduplication to ensure you never pay for (or wait for) the same research query twice.
-*   **Hardened Logic**: Comprehensive `pytest` suite ensuring 100% reliability of core database migrations and orchestration logic.
+*   **Normalized Evidence Core**: Scalable storage for `artifacts`, `findings`, and `links` (graph-ready).
+*   **Unified Ingestion Engine**: Modular connectors for automated research capture.
+*   **Instrumentation 2.0**: Every research event tracks **Confidence** (0.0-1.0), **Source**, and **Tags**.
+*   **Multi-Source Support**: 
+    *   **X (Twitter)**: High-signal real-time data via `bird`.
+    *   **Reddit**: Structured community discussions and top-comment trees.
+    *   **Grokipedia**: Direct knowledge-base ingestion via API.
+    *   **YouTube**: Metadata-only extraction (titles/descriptions) without API keys.
+*   **Suspicion Protocol 2.0**: Hardened logic for low-trust sources. Moltbook scans are forced to low-confidence (`0.55`) and tagged `#unverified`.
+*   **Semantic Cache**: Integrated deduplication for queries and artifacts.
+*   **Hardened Logic**: Versioned database migrations and a comprehensive `pytest` suite.
 
 ## 🚀 Workflows
 
 ### 1. Project Management
 Initialize a project, set objectives, and assign priority levels.
 ```bash
-python3 scripts/vault.py init --id "metal-v1" --name "Suomi Metal" --objective "Rising underground bands" --priority 5
+uv run python scripts/vault.py init --id "metal-v1" --name "Suomi Metal" --objective "Rising underground bands" --priority 5
 ```
 
-### 2. Multi-Source Scuttling
-Use the `scuttle` helper to automatically log findings with platform-aware confidence scores.
+### 2. Multi-Source Ingestion
+Use the unified `scuttle` command to ingest data from any supported source (Reddit, YouTube, Grokipedia, Web).
 ```bash
-python3 scripts/scuttle.py --id "metal-v1" --source "Reddit" --query "Finnish death metal" --data "Ashen Tomb rising."
+uv run python scripts/vault.py scuttle "https://www.youtube.com/watch?v=..." --id "metal-v1"
 ```
 
-### 3. Verification & Testing
-Run the integrated test suite via `uv` to verify system integrity.
+### 3. Export & Reporting
+Ship research summaries to Markdown or JSON for external use or agent review.
+```bash
+uv run python scripts/vault.py export --id "metal-v1" --format markdown --output summary.md
+```
+
+### 4. Verification & Testing
+Run the integrated test suite to verify system integrity.
 ```bash
 uv run pytest
 ```
 
-### 4. Monitoring
+### 5. Monitoring
 View sorted project lists and detailed event logs.
 ```bash
-python3 scripts/vault.py list
-python3 scripts/vault.py status --id "metal-v1"
+uv run python scripts/vault.py list
+uv run python scripts/vault.py status --id "metal-v1"
 ```
 
 ## 🛠️ Development & Environment

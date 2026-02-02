@@ -31,10 +31,11 @@ When performing research, use these specific channels to close the loop:
 Instruct sub-agents to log their "Pulse" using:
 `python3 scripts/vault.py log --id <id> --type <TYPE> --step <n> --source <name> --conf <0.0-1.0> --tags <tags>`
 
-### 4. Monitoring
-Check the status of all active research:
+### 4. Monitoring & Export
+Check the status of all active research or export summaries to Markdown/JSON:
 ```bash
 python3 scripts/vault.py status --id <id>
+python3 scripts/vault.py export --id <id> --format markdown --output brief.md
 ```
 
 ## Maintenance

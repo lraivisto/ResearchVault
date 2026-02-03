@@ -20,6 +20,7 @@ def test_youtube_fetch_success(mocker):
     </head>
     </html>
     """
+    mocker.patch("scripts.scuttle.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 0))])
     mocker.patch("requests.get", return_value=mock_resp)
     
     connector = YouTubeConnector()

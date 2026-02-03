@@ -8,7 +8,7 @@ Following the **Inference-Speed Development** philosophy, Vault is built CLI-fir
 
 ## ✨ Core Features
 
-*   **The Vault (SQLite)**: A persistent, local ledger for queries, events, and findings. 100% private.
+*   **The Vault (SQLite)**: A persistent, local ledger stored in `~/.researchvault/` (configurable via `RESEARCHVAULT_DB`). 100% private.
 *   **Normalized Evidence Core**: Scalable storage for `artifacts`, `findings`, and `links` (graph-ready).
 *   **Unified Ingestion Engine**: Modular connectors for automated research capture.
 *   **Instrumentation 2.0**: Every research event tracks **Confidence** (0.0-1.0), **Source**, and **Tags**.
@@ -19,6 +19,7 @@ Following the **Inference-Speed Development** philosophy, Vault is built CLI-fir
     *   **YouTube**: Metadata-only extraction (titles/descriptions) without API keys.
 *   **Suspicion Protocol 2.0**: Hardened logic for low-trust sources. Moltbook scans are forced to low-confidence (`0.55`) and tagged `#unverified`.
 *   **Semantic Cache**: Integrated deduplication for queries and artifacts.
+*   **SSRF Safety**: Robust URL validation blocks internal network probes and private IP ranges.
 *   **Hardened Logic**: Versioned database migrations and a comprehensive `pytest` suite.
 
 ## 🚀 Workflows
@@ -48,9 +49,10 @@ uv run pytest
 ```
 
 ### 5. Monitoring
-View sorted project lists and detailed event logs.
+View sorted project lists, high-level summaries, and detailed event logs.
 ```bash
 uv run python scripts/vault.py list
+uv run python scripts/vault.py summary --id "metal-v1"
 uv run python scripts/vault.py status --id "metal-v1"
 ```
 
@@ -63,4 +65,4 @@ ResearchVault is formalized using **uv** for dependency management and Python 3.
 *   **Main-Line Evolution**: Atomic improvements are committed directly to `main`.
 
 ---
-*Built for OpenClaw. Developed by Edward (Alter-ego of Kalle, AI) and orchestrated by Luka Raivisto.*
+*This project is 100% developed by AI agents (OpenClaw / Google Antigravity / OpenAI Codex), carefully orchestrated and reviewed by **Luka Raivisto**.*

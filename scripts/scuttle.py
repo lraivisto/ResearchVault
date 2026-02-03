@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
+import ipaddress
+import socket
+import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -8,6 +11,44 @@ import json
 
 class ScuttleError(Exception):
     pass
+
+DEFAULT_TIMEOUT_S = 15
+
+def _is_blocked_ip(ip: str) -> bool:
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    )
+
+def _is_blocked_host(hostname: str) -> bool:
+    if hostname in {"localhost"} or hostname.endswith(".localhost") or hostname.endswith(".local"):
+        return True
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return True
+    for entry in addrinfo:
+        ip = entry[4][0]
+        if _is_blocked_ip(ip):
+            return True
+    return False
+
+def _ensure_safe_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ScuttleError("Only http/https URLs are allowed.")
+    if not parsed.hostname:
+        raise ScuttleError("URL must include a hostname.")
+    if _is_blocked_host(parsed.hostname):
+        raise ScuttleError("Blocked host: local/private addresses are not allowed.")
 
 @dataclass
 class ArtifactDraft:
@@ -77,7 +118,8 @@ class RedditScuttler(Scuttler):
 
         headers = {"User-Agent": "ResearchVault/1.0.1"}
         try:
-            resp = requests.get(json_url, headers=headers)
+            _ensure_safe_url(json_url)
+            resp = requests.get(json_url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
             resp.raise_for_status()
             data = resp.json()
             
@@ -136,7 +178,8 @@ class WebScuttler(Scuttler):
     def scuttle(self, url):
         headers = {"User-Agent": "ResearchVault/1.0.1"}
         try:
-            resp = requests.get(url, headers=headers, timeout=10)
+            _ensure_safe_url(url)
+            resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
             resp.raise_for_status()
             
             soup = BeautifulSoup(resp.text, 'html.parser')
@@ -175,7 +218,8 @@ class GrokipediaConnector(Connector):
             
         api_url = f"https://grokipedia-api.com/page/{slug}"
         try:
-            resp = requests.get(api_url, timeout=15)
+            _ensure_safe_url(api_url)
+            resp = requests.get(api_url, timeout=DEFAULT_TIMEOUT_S)
             resp.raise_for_status()
             data = resp.json()
             
@@ -198,7 +242,8 @@ class YouTubeConnector(Connector):
     def fetch(self, source: str) -> ArtifactDraft:
         headers = {"User-Agent": "ResearchVault/1.1.0"}
         try:
-            resp = requests.get(source, headers=headers, timeout=15)
+            _ensure_safe_url(source)
+            resp = requests.get(source, headers=headers, timeout=DEFAULT_TIMEOUT_S)
             resp.raise_for_status()
             
             soup = BeautifulSoup(resp.text, 'html.parser')

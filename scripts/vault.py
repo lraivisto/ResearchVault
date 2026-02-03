@@ -17,7 +17,7 @@ import scripts.scuttle as scuttle_engine
 
 console = Console()
 
-if __name__ == "__main__":
+def main():
     db.init_db()
     parser = argparse.ArgumentParser(description="Vault Orchestrator")
     subparsers = parser.add_subparsers(dest="command")
@@ -330,3 +330,6 @@ if __name__ == "__main__":
                     pass
                 source = evidence.get("source_url", "unknown")
                 print(f"[{i[4]}] {i[0]} (Conf: {i[5]})\nContent: {i[1]}\nSource: {source}\nTags: {i[3]}\n")
+
+if __name__ == "__main__":
+    main()

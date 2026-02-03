@@ -249,7 +249,6 @@ def main():
         core.log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
         console.print(f"[green]✔ Logged[/green] [bold cyan]{args.type}[/] for [bold white]{args.id}[/] (conf: {args.conf}, src: {args.source})")
     elif args.command == "status":
-        from rich.panel import Panel
         from rich.console import Group
         
         status = core.get_status(args.id, tag_filter=args.filter_tag)

@@ -333,6 +333,49 @@ def add_insight(project_id, title, content, source_url="", tags="", confidence=1
     )
     conn.commit()
     conn.close()
+    return finding_id
+
+def add_artifact(
+    project_id: str,
+    path: str,
+    type: str = "FILE",
+    metadata: Optional[Dict[str, Any]] = None,
+    branch: Optional[str] = None,
+) -> str:
+    artifact_id = f"art_{uuid.uuid4().hex[:10]}"
+    now = datetime.now().isoformat()
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO artifacts (id, project_id, type, path, metadata, created_at, branch_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (artifact_id, project_id, type, path, json.dumps(metadata or {}), now, branch_id),
+    )
+    conn.commit()
+    conn.close()
+    log_event(
+        project_id,
+        "ARTIFACT",
+        "add",
+        {"artifact_id": artifact_id, "path": path, "type": type},
+        source="vault",
+        tags="artifact",
+        branch=branch,
+    )
+    return artifact_id
+
+def list_artifacts(project_id: str, branch: Optional[str] = None):
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, type, path, metadata, created_at FROM artifacts WHERE project_id=? AND branch_id=? ORDER BY created_at DESC",
+        (project_id, branch_id),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 def get_insights(project_id, tag_filter=None, branch: Optional[str] = None):
     conn = db.get_connection()

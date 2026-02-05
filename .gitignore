@@ -9,3 +9,8 @@ __pycache__/
 venv/
 
 get-pip.py
+
+# Local SQLite vaults (never commit)
+*.db
+*.sqlite
+*.sqlite3

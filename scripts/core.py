@@ -682,6 +682,122 @@ def run_verification_missions(
     conn.close()
     return results
 
+def add_watch_target(
+    project_id: str,
+    target_type: str,
+    target: str,
+    *,
+    interval_s: int = 3600,
+    tags: str = "",
+    branch: Optional[str] = None,
+) -> str:
+    if target_type not in {"url", "query"}:
+        raise ValueError("target_type must be 'url' or 'query'")
+    if not (target or "").strip():
+        raise ValueError("target must be non-empty")
+
+    branch_id = resolve_branch_id(project_id, branch)
+    now = datetime.now().isoformat()
+    norm_target = target.strip()
+    if target_type == "query":
+        norm_target = _normalize_query(norm_target)
+    else:
+        norm_target = norm_target.lower()
+
+    dedup_hash = hashlib.sha256(f"{project_id}|{branch_id}|{target_type}|{norm_target}".encode()).hexdigest()
+    target_id = f"wt_{uuid.uuid4().hex[:10]}"
+
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT OR IGNORE INTO watch_targets
+           (id, project_id, branch_id, target_type, target, tags, interval_s, status,
+            last_run_at, last_result_hash, last_error, created_at, updated_at, dedup_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            target_id,
+            project_id,
+            branch_id,
+            target_type,
+            target.strip(),
+            tags or "",
+            int(interval_s),
+            "active",
+            None,
+            "",
+            "",
+            now,
+            now,
+            dedup_hash,
+        ),
+    )
+    if c.rowcount != 1:
+        c.execute("SELECT id FROM watch_targets WHERE dedup_hash=?", (dedup_hash,))
+        row = c.fetchone()
+        if row:
+            target_id = row[0]
+    conn.commit()
+    conn.close()
+    log_event(
+        project_id,
+        "WATCH",
+        "add",
+        {"target_id": target_id, "type": target_type, "target": target.strip(), "interval_s": interval_s},
+        confidence=0.9,
+        source="vault",
+        tags="watch",
+        branch=branch,
+    )
+    return target_id
+
+def list_watch_targets(
+    project_id: str,
+    branch: Optional[str] = None,
+    *,
+    status: Optional[str] = "active",
+):
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    params: List[Any] = [project_id, branch_id]
+    query = (
+        "SELECT id, target_type, target, tags, interval_s, status, last_run_at, last_error, created_at "
+        "FROM watch_targets WHERE project_id=? AND branch_id=?"
+    )
+    if status:
+        query += " AND status=?"
+        params.append(status)
+    query += " ORDER BY created_at DESC"
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def disable_watch_target(target_id: str) -> None:
+    now = datetime.now().isoformat()
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE watch_targets SET status=?, updated_at=? WHERE id=?", ("disabled", now, target_id))
+    conn.commit()
+    conn.close()
+
+def update_watch_target_run(
+    target_id: str,
+    *,
+    last_run_at: str,
+    last_result_hash: str = "",
+    last_error: str = "",
+) -> None:
+    now = datetime.now().isoformat()
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE watch_targets SET last_run_at=?, last_result_hash=?, last_error=?, updated_at=? WHERE id=?",
+        (last_run_at, last_result_hash or "", last_error or "", now, target_id),
+    )
+    conn.commit()
+    conn.close()
+
 def get_insights(project_id, tag_filter=None, branch: Optional[str] = None):
     conn = db.get_connection()
     c = conn.cursor()

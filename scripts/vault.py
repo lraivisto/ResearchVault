@@ -188,6 +188,34 @@ def main():
         help="Mount path for SSE transport (optional)",
     )
 
+    # Watch targets + watchdog runner
+    watch_parser = subparsers.add_parser("watch", help="Manage watchdog targets")
+    watch_sub = watch_parser.add_subparsers(dest="watch_command")
+
+    watch_add = watch_sub.add_parser("add", help="Add a watch target (url/query)")
+    watch_add.add_argument("--id", required=True)
+    watch_add.add_argument("--type", required=True, choices=["url", "query"])
+    watch_add.add_argument("--target", required=True)
+    watch_add.add_argument("--interval", type=int, default=3600, help="Minimum seconds between runs")
+    watch_add.add_argument("--tags", default="", help="Comma-separated tags")
+    watch_add.add_argument("--branch", default=None, help="Branch name (default: main)")
+
+    watch_list = watch_sub.add_parser("list", help="List watch targets")
+    watch_list.add_argument("--id", required=True)
+    watch_list.add_argument("--branch", default=None, help="Branch name (default: main)")
+    watch_list.add_argument("--status", default="active", choices=["active", "disabled", "all"])
+
+    watch_disable = watch_sub.add_parser("disable", help="Disable a watch target")
+    watch_disable.add_argument("--target-id", required=True)
+
+    watchdog_parser = subparsers.add_parser("watchdog", help="Run watchdog (scuttle/search in background)")
+    watchdog_parser.add_argument("--once", action="store_true", help="Run one iteration and exit")
+    watchdog_parser.add_argument("--interval", type=int, default=300, help="Loop interval in seconds")
+    watchdog_parser.add_argument("--limit", type=int, default=10, help="Max targets per iteration")
+    watchdog_parser.add_argument("--id", default=None, help="Optional project id filter")
+    watchdog_parser.add_argument("--branch", default=None, help="Optional branch filter (requires --id)")
+    watchdog_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -617,6 +645,63 @@ def main():
         from scripts.mcp_server import mcp as server
 
         server.run(transport=args.transport, mount_path=args.mount_path)
+    elif args.command == "watch":
+        if args.watch_command == "add":
+            tid = core.add_watch_target(
+                args.id,
+                args.type,
+                args.target,
+                interval_s=args.interval,
+                tags=args.tags,
+                branch=args.branch,
+            )
+            console.print(f"[green]✔ Added watch target[/green] {tid}")
+        elif args.watch_command == "list":
+            status = None if args.status == "all" else args.status
+            rows = core.list_watch_targets(args.id, branch=args.branch, status=status)
+            if not rows:
+                console.print("[yellow]No watch targets found.[/yellow]")
+            else:
+                table = Table(title=f"Watch Targets: {args.id}", box=box.ROUNDED)
+                table.add_column("ID", style="dim")
+                table.add_column("Type", style="cyan")
+                table.add_column("Interval", justify="right", style="magenta")
+                table.add_column("Target", style="green")
+                table.add_column("Last Run", style="dim")
+                table.add_column("Status", style="bold")
+                for tid, ttype, target, tags, interval_s, status, last_run_at, last_error, created_at in rows:
+                    table.add_row(
+                        tid,
+                        ttype,
+                        str(interval_s),
+                        (target or "")[:60],
+                        (last_run_at or "")[:19],
+                        status,
+                    )
+                console.print(table)
+        elif args.watch_command == "disable":
+            core.disable_watch_target(args.target_id)
+            console.print(f"[green]✔ Disabled watch target[/green] {args.target_id}")
+        else:
+            console.print("[red]Error:[/red] watch requires a subcommand (add|list|disable).")
+    elif args.command == "watchdog":
+        from scripts.watchdog import loop as watchdog_loop, run_once
+
+        if args.once:
+            actions = run_once(project_id=args.id, branch=args.branch, limit=args.limit, dry_run=args.dry_run)
+            if not actions:
+                console.print("[yellow]No due targets.[/yellow]")
+            else:
+                table = Table(title="Watchdog Actions", box=box.ROUNDED)
+                table.add_column("Target", style="dim")
+                table.add_column("Project", style="cyan")
+                table.add_column("Type", style="magenta")
+                table.add_column("Status", style="bold")
+                for a in actions:
+                    table.add_row(a.get("id", ""), a.get("project_id", ""), a.get("type", ""), a.get("status", ""))
+                console.print(table)
+        else:
+            watchdog_loop(interval_s=args.interval, limit=args.limit)
 
 if __name__ == "__main__":
     main()

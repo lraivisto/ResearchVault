@@ -5,7 +5,7 @@ import os
 import re
 import uuid
 import requests
-from typing import List, Optional, Dict, Any, Type
+from typing import List, Optional, Dict, Any, Type, Tuple
 from datetime import datetime, timedelta
 import scripts.db as db
 from scripts.scuttle import Connector, ArtifactDraft, IngestResult
@@ -376,6 +376,310 @@ def list_artifacts(project_id: str, branch: Optional[str] = None):
     rows = c.fetchall()
     conn.close()
     return rows
+
+def _normalize_query(query: str) -> str:
+    return " ".join((query or "").strip().lower().split())
+
+def _query_hash(query: str) -> str:
+    return hashlib.sha256(_normalize_query(query).encode()).hexdigest()
+
+def _extract_keywords(text: str, limit: int = 8) -> List[str]:
+    stop = {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "then",
+        "there",
+        "these",
+        "this",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+    }
+    tokens = re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+    freq: Dict[str, int] = {}
+    for t in tokens:
+        if t in stop:
+            continue
+        freq[t] = freq.get(t, 0) + 1
+    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [t for (t, _) in ranked[: max(1, int(limit))]]
+
+def plan_verification_missions(
+    project_id: str,
+    branch: Optional[str] = None,
+    *,
+    threshold: float = 0.7,
+    max_missions: int = 20,
+) -> List[Tuple[str, str, str]]:
+    """
+    Create SEARCH missions for low-confidence or explicitly unverified findings.
+    Returns inserted missions as tuples: (mission_id, finding_id, query).
+    """
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+
+    c.execute(
+        """SELECT id, title, content, evidence, tags, confidence
+           FROM findings
+           WHERE project_id=? AND branch_id=?
+             AND (confidence < ? OR tags LIKE '%unverified%')
+           ORDER BY confidence ASC, created_at DESC""",
+        (project_id, branch_id, float(threshold)),
+    )
+    findings = c.fetchall()
+
+    inserted: List[Tuple[str, str, str]] = []
+    for finding_id, title, content, evidence, tags, confidence in findings:
+        if len(inserted) >= int(max_missions):
+            break
+
+        source_url = ""
+        try:
+            ev = json.loads(evidence or "{}")
+            source_url = ev.get("source_url", "") or ""
+        except Exception:
+            source_url = ""
+
+        keywords = _extract_keywords(f"{title}\n{content}", limit=6)
+        base = (title or "").strip()
+        kw = " ".join(keywords[:4]).strip()
+
+        queries: List[str] = []
+        if base:
+            queries.append(base)
+        if base and kw and kw not in base.lower():
+            queries.append(f"{base} {kw}")
+        if source_url:
+            try:
+                from urllib.parse import urlparse
+
+                host = urlparse(source_url).hostname or ""
+                if host:
+                    queries.append(f"site:{host} {base or kw}".strip())
+            except Exception:
+                pass
+        if kw:
+            queries.append(kw)
+        if base:
+            queries.append(f"{base} evidence")
+
+        # Dedup queries while preserving order.
+        seen_q: set[str] = set()
+        uniq_queries: List[str] = []
+        for q in queries:
+            nq = _normalize_query(q)
+            if not nq or nq in seen_q:
+                continue
+            seen_q.add(nq)
+            uniq_queries.append(q.strip())
+
+        for q in uniq_queries:
+            if len(inserted) >= int(max_missions):
+                break
+
+            qhash = _query_hash(q)
+            dedup_hash = hashlib.sha256(f"{project_id}|{branch_id}|{finding_id}|{qhash}".encode()).hexdigest()
+            mission_id = f"mis_{uuid.uuid4().hex[:10]}"
+            priority = int(max(0, min(100, round((1.0 - float(confidence or 0.0)) * 100))))
+            question = f"Corroborate: {base}" if base else "Corroborate finding"
+            rationale = "Auto-generated for low-confidence finding"
+
+            c.execute(
+                """INSERT OR IGNORE INTO verification_missions
+                   (id, project_id, branch_id, finding_id, mission_type, query, query_hash,
+                    question, rationale, status, priority, result_meta, last_error,
+                    created_at, updated_at, completed_at, dedup_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mission_id,
+                    project_id,
+                    branch_id,
+                    finding_id,
+                    "SEARCH",
+                    q.strip(),
+                    qhash,
+                    question,
+                    rationale,
+                    "open",
+                    priority,
+                    "",
+                    "",
+                    now,
+                    now,
+                    None,
+                    dedup_hash,
+                ),
+            )
+            if c.rowcount == 1:
+                inserted.append((mission_id, finding_id, q.strip()))
+
+    conn.commit()
+    conn.close()
+    if inserted:
+        log_event(
+            project_id,
+            "VERIFY",
+            "plan",
+            {"missions": len(inserted), "threshold": threshold},
+            confidence=0.9,
+            source="vault",
+            tags="verify",
+            branch=branch,
+        )
+    return inserted
+
+def list_verification_missions(
+    project_id: str,
+    branch: Optional[str] = None,
+    *,
+    status: Optional[str] = None,
+    limit: int = 50,
+):
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    params: List[Any] = [project_id, branch_id]
+    query = (
+        """SELECT m.id, m.status, m.priority, m.query, f.title, f.confidence,
+                  m.created_at, m.completed_at, m.last_error
+           FROM verification_missions m
+           JOIN findings f ON f.id = m.finding_id
+           WHERE m.project_id=? AND m.branch_id=?"""
+    )
+    if status:
+        query += " AND m.status=?"
+        params.append(status)
+    query += " ORDER BY m.priority DESC, m.created_at ASC LIMIT ?"
+    params.append(int(limit))
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def set_verification_mission_status(mission_id: str, status: str, note: str = "") -> None:
+    conn = db.get_connection()
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    completed_at = now if status in {"done", "cancelled"} else None
+    c.execute(
+        "UPDATE verification_missions SET status=?, last_error=?, updated_at=?, completed_at=COALESCE(completed_at, ?) WHERE id=?",
+        (status, note or "", now, completed_at, mission_id),
+    )
+    conn.commit()
+    conn.close()
+
+def run_verification_missions(
+    project_id: str,
+    branch: Optional[str] = None,
+    *,
+    status: str = "open",
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    branch_id = resolve_branch_id(project_id, branch)
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT id, query
+           FROM verification_missions
+           WHERE project_id=? AND branch_id=? AND status=?
+           ORDER BY priority DESC, created_at ASC
+           LIMIT ?""",
+        (project_id, branch_id, status, int(limit)),
+    )
+    rows = c.fetchall()
+    now = datetime.now().isoformat()
+
+    results: List[Dict[str, Any]] = []
+    for mission_id, query in rows:
+        c.execute(
+            "UPDATE verification_missions SET status=?, updated_at=? WHERE id=?",
+            ("in_progress", now, mission_id),
+        )
+        conn.commit()
+
+        try:
+            cached = check_search(query)
+            if cached is None:
+                cached = perform_brave_search(query)
+                log_search(query, cached)
+
+            meta = {"query_hash": _query_hash(query)}
+            # Best-effort extraction for UI, structure varies.
+            try:
+                web = cached.get("web", {}) if isinstance(cached, dict) else {}
+                results_list = web.get("results", []) if isinstance(web, dict) else []
+                meta["result_count"] = len(results_list)
+                if results_list:
+                    top = results_list[0]
+                    if isinstance(top, dict):
+                        meta["top_url"] = top.get("url", "")
+                        meta["top_title"] = top.get("title", "")
+            except Exception:
+                pass
+
+            c.execute(
+                """UPDATE verification_missions
+                   SET status=?, result_meta=?, last_error=?, completed_at=?, updated_at=?
+                   WHERE id=?""",
+                ("done", json.dumps(meta, ensure_ascii=True), "", now, now, mission_id),
+            )
+            conn.commit()
+
+            log_event(
+                project_id,
+                "VERIFY",
+                "run",
+                {"mission_id": mission_id, "query": query, "result_meta": meta},
+                confidence=0.85,
+                source="vault",
+                tags="verify,search",
+                branch=branch,
+            )
+            results.append({"id": mission_id, "status": "done", "query": query, "meta": meta})
+        except MissingAPIKeyError as e:
+            c.execute(
+                "UPDATE verification_missions SET status=?, last_error=?, updated_at=? WHERE id=?",
+                ("blocked", str(e), now, mission_id),
+            )
+            conn.commit()
+            results.append({"id": mission_id, "status": "blocked", "query": query, "error": str(e)})
+        except Exception as e:
+            c.execute(
+                "UPDATE verification_missions SET status=?, last_error=?, updated_at=? WHERE id=?",
+                ("open", str(e), now, mission_id),
+            )
+            conn.commit()
+            results.append({"id": mission_id, "status": "open", "query": query, "error": str(e)})
+
+    conn.close()
+    return results
 
 def get_insights(project_id, tag_filter=None, branch: Optional[str] = None):
     conn = db.get_connection()

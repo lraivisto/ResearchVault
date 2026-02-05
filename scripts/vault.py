@@ -174,6 +174,20 @@ def main():
     verify_complete.add_argument("--status", default="done", choices=["done", "cancelled", "open"])
     verify_complete.add_argument("--note", default="")
 
+    # MCP server
+    mcp_parser = subparsers.add_parser("mcp", help="Run ResearchVault as an MCP server")
+    mcp_parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "sse", "streamable-http"],
+        help="MCP transport (default: stdio)",
+    )
+    mcp_parser.add_argument(
+        "--mount-path",
+        default=None,
+        help="Mount path for SSE transport (optional)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -598,6 +612,11 @@ def main():
             console.print(f"[green]✔ Updated mission[/green] {args.mission} -> {args.status}")
         else:
             console.print("[red]Error:[/red] verify requires a subcommand (plan|list|run|complete).")
+    elif args.command == "mcp":
+        # IMPORTANT: keep stdout clean for stdio transport.
+        from scripts.mcp_server import mcp as server
+
+        server.run(transport=args.transport, mount_path=args.mount_path)
 
 if __name__ == "__main__":
     main()

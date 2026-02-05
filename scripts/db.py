@@ -3,10 +3,31 @@ import os
 import uuid
 import json
 import sys
+import time
+from functools import wraps
 
 # Path to the research database
 DEFAULT_DB_PATH = os.path.expanduser("~/.researchvault/research_vault.db")
 LEGACY_DB_PATH = os.path.expanduser("~/.openclaw/workspace/memory/research_vault.db")
+
+def retry_on_lock(retries=5, delay=0.1):
+    """Decorator to retry database operations if the database is locked."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_err = None
+            for i in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e):
+                        last_err = e
+                        time.sleep(delay * (2 ** i)) # Exponential backoff
+                        continue
+                    raise
+            raise last_err
+        return wrapper
+    return decorator
 
 def get_db_path():
     """Resolve the database path with env override and legacy fallback."""
@@ -18,10 +39,11 @@ def get_db_path():
     return DEFAULT_DB_PATH
 
 def get_connection():
-    """Returns a connection to the SQLite database."""
+    """Returns a connection to the SQLite database with a busy timeout."""
     db_path = get_db_path()
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    return sqlite3.connect(db_path)
+    # 30 second timeout for busy/locked database
+    return sqlite3.connect(db_path, timeout=30.0)
 
 def init_db():
     """Initialize the database and run versioned migrations."""

@@ -34,6 +34,7 @@ def main():
     export_parser.add_argument("--id", required=True)
     export_parser.add_argument("--format", choices=['json', 'markdown'], default='json')
     export_parser.add_argument("--output", help="Output file path")
+    export_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # List
     list_parser = subparsers.add_parser("list")
@@ -49,6 +50,7 @@ def main():
     scuttle_parser.add_argument("url", help="URL to scuttle")
     scuttle_parser.add_argument("--id", required=True, help="Project ID")
     scuttle_parser.add_argument("--tags", help="Additional comma-separated tags")
+    scuttle_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # Search (Hybrid: Cache + Brave API)
     search_parser = subparsers.add_parser("search")
@@ -64,11 +66,13 @@ def main():
     log_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     log_parser.add_argument("--source", default="unknown", help="Source of the event (e.g. agent name)")
     log_parser.add_argument("--tags", default="", help="Comma-separated tags for the event")
+    log_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # Status
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("--id", required=True)
     status_parser.add_argument("--filter-tag", help="Filter events by tag")
+    status_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # Insight
     insight_parser = subparsers.add_parser("insight")
@@ -80,6 +84,7 @@ def main():
     insight_parser.add_argument("--tags", default="")
     insight_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
+    insight_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # Interactive Insight Mode
     insight_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive session to add multiple insights")
@@ -87,17 +92,47 @@ def main():
     # Summary
     summary_parser = subparsers.add_parser("summary")
     summary_parser.add_argument("--id", required=True)
+    summary_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+
+    # Branches
+    branch_parser = subparsers.add_parser("branch", help="Manage divergent reasoning branches")
+    branch_sub = branch_parser.add_subparsers(dest="branch_command")
+
+    branch_create = branch_sub.add_parser("create", help="Create a new branch")
+    branch_create.add_argument("--id", required=True)
+    branch_create.add_argument("--name", required=True)
+    branch_create.add_argument("--from", dest="parent", default=None, help="Parent branch name")
+    branch_create.add_argument("--hypothesis", default="", help="Optional hypothesis for this branch")
+
+    branch_list = branch_sub.add_parser("list", help="List branches")
+    branch_list.add_argument("--id", required=True)
+
+    # Hypotheses
+    hyp_parser = subparsers.add_parser("hypothesis", help="Manage hypotheses within branches")
+    hyp_sub = hyp_parser.add_subparsers(dest="hyp_command")
+
+    hyp_add = hyp_sub.add_parser("add", help="Add a hypothesis to a branch")
+    hyp_add.add_argument("--id", required=True)
+    hyp_add.add_argument("--branch", default="main")
+    hyp_add.add_argument("--statement", required=True)
+    hyp_add.add_argument("--rationale", default="")
+    hyp_add.add_argument("--conf", type=float, default=0.5)
+    hyp_add.add_argument("--status", default="open", choices=["open", "accepted", "rejected", "archived"])
+
+    hyp_list = hyp_sub.add_parser("list", help="List hypotheses")
+    hyp_list.add_argument("--id", required=True)
+    hyp_list.add_argument("--branch", default=None, help="Branch name (omit for all)")
 
     args = parser.parse_args()
 
     if args.command == "init":
         core.start_project(args.id, args.name or args.id, args.objective, args.priority)
     elif args.command == "export":
-        data = core.get_status(args.id)
+        data = core.get_status(args.id, branch=args.branch)
         if not data:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
-            insights = core.get_insights(args.id)
+            insights = core.get_insights(args.id, branch=args.branch)
             export_data = {
                 "project": {
                     "id": data['project'][0],
@@ -171,12 +206,12 @@ def main():
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
     elif args.command == "summary":
-        status = core.get_status(args.id)
+        status = core.get_status(args.id, branch=args.branch)
         if not status:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
             p = status['project']
-            insights = core.get_insights(args.id)
+            insights = core.get_insights(args.id, branch=args.branch)
             events = status['recent_events']
             
             console.print(Panel(
@@ -195,7 +230,7 @@ def main():
             # Additional tags if provided
             extra_tags = args.tags.split(",") if args.tags else []
             
-            result = service.ingest(args.id, args.url, extra_tags=extra_tags)
+            result = service.ingest(args.id, args.url, extra_tags=extra_tags, branch=args.branch)
             
             if result.success:
                 source_info = f"({result.metadata.get('source', 'unknown')})"
@@ -246,12 +281,21 @@ def main():
                 except Exception as e:
                     console.print(f"[red]Search failed:[/red] {e}")
     elif args.command == "log":
-        core.log_event(args.id, args.type, args.step, json.loads(args.payload), args.conf, args.source, args.tags)
+        core.log_event(
+            args.id,
+            args.type,
+            args.step,
+            json.loads(args.payload),
+            args.conf,
+            args.source,
+            args.tags,
+            branch=args.branch,
+        )
         console.print(f"[green]✔ Logged[/green] [bold cyan]{args.type}[/] for [bold white]{args.id}[/] (conf: {args.conf}, src: {args.source})")
     elif args.command == "status":
         from rich.console import Group
         
-        status = core.get_status(args.id, tag_filter=args.filter_tag)
+        status = core.get_status(args.id, tag_filter=args.filter_tag, branch=args.branch)
         if not status:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
@@ -285,7 +329,7 @@ def main():
                 )
             
             # Insights Panel (if any)
-            insights = core.get_insights(args.id)
+            insights = core.get_insights(args.id, branch=args.branch)
             if insights:
                 insight_table = Table(box=box.SIMPLE, show_header=False)
                 for i in insights:
@@ -309,16 +353,16 @@ def main():
                 except ValueError:
                     conf = 1.0
                 
-                core.add_insight(args.id, title, content, "", tags, confidence=conf)
+                core.add_insight(args.id, title, content, "", tags, confidence=conf, branch=args.branch)
                 console.print("[green]✔ Added.[/green]\n")
         elif args.add:
             if not args.title or not args.content:
                 print("Error: --title and --content required for adding insight.")
             else:
-                core.add_insight(args.id, args.title, args.content, args.url, args.tags, confidence=args.conf)
+                core.add_insight(args.id, args.title, args.content, args.url, args.tags, confidence=args.conf, branch=args.branch)
                 print(f"Added insight to project '{args.id}'.")
         else:
-            insights = core.get_insights(args.id, tag_filter=args.filter_tag)
+            insights = core.get_insights(args.id, tag_filter=args.filter_tag, branch=args.branch)
             if not insights:
                 print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
             for i in insights:
@@ -329,6 +373,53 @@ def main():
                     pass
                 source = evidence.get("source_url", "unknown")
                 print(f"[{i[4]}] {i[0]} (Conf: {i[5]})\nContent: {i[1]}\nSource: {source}\nTags: {i[3]}\n")
+    elif args.command == "branch":
+        if args.branch_command == "create":
+            branch_id = core.create_branch(args.id, args.name, parent=args.parent, hypothesis=args.hypothesis)
+            console.print(f"[green]✔ Created branch[/green] [bold]{args.name}[/] ({branch_id}) for project [bold]{args.id}[/]")
+        elif args.branch_command == "list":
+            rows = core.list_branches(args.id)
+            if not rows:
+                console.print("[yellow]No branches found.[/yellow]")
+            else:
+                table = Table(title=f"Branches: {args.id}", box=box.ROUNDED)
+                table.add_column("Name", style="cyan")
+                table.add_column("ID", style="dim")
+                table.add_column("Parent", style="magenta")
+                table.add_column("Status", style="bold")
+                table.add_column("Hypothesis")
+                for (bid, name, parent_id, hypothesis, status, created_at) in rows:
+                    table.add_row(name, bid, parent_id or "", status, (hypothesis or "")[:80])
+                console.print(table)
+        else:
+            console.print("[red]Error:[/red] branch requires a subcommand (create|list).")
+    elif args.command == "hypothesis":
+        if args.hyp_command == "add":
+            hid = core.add_hypothesis(
+                args.id,
+                args.branch,
+                args.statement,
+                rationale=args.rationale,
+                confidence=args.conf,
+                status=args.status,
+            )
+            console.print(f"[green]✔ Added hypothesis[/green] {hid} to branch [bold]{args.branch}[/]")
+        elif args.hyp_command == "list":
+            rows = core.list_hypotheses(args.id, branch=args.branch)
+            if not rows:
+                console.print("[yellow]No hypotheses found.[/yellow]")
+            else:
+                table = Table(title=f"Hypotheses: {args.id}", box=box.ROUNDED)
+                table.add_column("ID", style="dim")
+                table.add_column("Branch", style="cyan")
+                table.add_column("Status", style="bold")
+                table.add_column("Conf", justify="right")
+                table.add_column("Statement")
+                for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows:
+                    table.add_row(hid, bname, status, f"{conf:.2f}", (stmt or "")[:90])
+                console.print(table)
+        else:
+            console.print("[red]Error:[/red] hypothesis requires a subcommand (add|list).")
 
 if __name__ == "__main__":
     main()

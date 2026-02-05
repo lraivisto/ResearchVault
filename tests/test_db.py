@@ -74,6 +74,13 @@ def test_init_db_schema(db_conn):
     assert "model" in columns
     assert "vector" in columns
 
+    # Verification missions (v6)
+    c.execute("PRAGMA table_info(verification_missions)")
+    columns = {r[1] for r in c.fetchall()}
+    assert "finding_id" in columns
+    assert "query" in columns
+    assert "status" in columns
+
 def test_migrations_are_idempotent(db_conn):
     """
     Test that running init_db (and thus migrations) multiple times is safe.

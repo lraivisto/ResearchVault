@@ -147,6 +147,33 @@ def main():
     synth_parser.add_argument("--max-links", type=int, default=50)
     synth_parser.add_argument("--dry-run", action="store_true", help="Compute links but do not persist")
 
+    # Verification protocol
+    verify_parser = subparsers.add_parser("verify", help="Active verification protocol (missions)")
+    verify_sub = verify_parser.add_subparsers(dest="verify_command")
+
+    verify_plan = verify_sub.add_parser("plan", help="Generate search missions for low-confidence findings")
+    verify_plan.add_argument("--id", required=True)
+    verify_plan.add_argument("--branch", default=None, help="Branch name (default: main)")
+    verify_plan.add_argument("--threshold", type=float, default=0.7)
+    verify_plan.add_argument("--max", dest="max_missions", type=int, default=20)
+
+    verify_list = verify_sub.add_parser("list", help="List verification missions")
+    verify_list.add_argument("--id", required=True)
+    verify_list.add_argument("--branch", default=None, help="Branch name (default: main)")
+    verify_list.add_argument("--status", default=None, choices=["open", "in_progress", "done", "blocked", "cancelled"])
+    verify_list.add_argument("--limit", type=int, default=50)
+
+    verify_run = verify_sub.add_parser("run", help="Execute missions via cache/Brave (if configured)")
+    verify_run.add_argument("--id", required=True)
+    verify_run.add_argument("--branch", default=None, help="Branch name (default: main)")
+    verify_run.add_argument("--status", default="open", choices=["open", "blocked"])
+    verify_run.add_argument("--limit", type=int, default=5)
+
+    verify_complete = verify_sub.add_parser("complete", help="Manually update a mission status")
+    verify_complete.add_argument("--mission", required=True)
+    verify_complete.add_argument("--status", default="done", choices=["done", "cancelled", "open"])
+    verify_complete.add_argument("--note", default="")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -498,6 +525,79 @@ def main():
                     f"{link['target_label']} ({link['target_id']})",
                 )
             console.print(table)
+    elif args.command == "verify":
+        if args.verify_command == "plan":
+            missions = core.plan_verification_missions(
+                args.id,
+                branch=args.branch,
+                threshold=args.threshold,
+                max_missions=args.max_missions,
+            )
+            if not missions:
+                console.print("[yellow]No missions created (nothing under threshold or already planned).[/yellow]")
+            else:
+                table = Table(title="Verification Missions (Created)", box=box.ROUNDED)
+                table.add_column("Mission", style="dim")
+                table.add_column("Finding", style="cyan")
+                table.add_column("Query", style="green")
+                for mid, fid, q in missions:
+                    table.add_row(mid, fid, q[:120])
+                console.print(table)
+        elif args.verify_command == "list":
+            rows = core.list_verification_missions(
+                args.id,
+                branch=args.branch,
+                status=args.status,
+                limit=args.limit,
+            )
+            if not rows:
+                console.print("[yellow]No missions found.[/yellow]")
+            else:
+                table = Table(title="Verification Missions", box=box.ROUNDED)
+                table.add_column("ID", style="dim")
+                table.add_column("Status", style="bold")
+                table.add_column("Pri", justify="right", style="magenta")
+                table.add_column("Finding", style="cyan")
+                table.add_column("Conf", justify="right")
+                table.add_column("Query", style="green")
+                for mid, status, pri, query, title, conf, created_at, completed_at, last_error in rows:
+                    table.add_row(
+                        mid,
+                        status,
+                        str(pri),
+                        (title or "")[:40],
+                        f"{float(conf or 0.0):.2f}",
+                        (query or "")[:80],
+                    )
+                console.print(table)
+        elif args.verify_command == "run":
+            results = core.run_verification_missions(
+                args.id,
+                branch=args.branch,
+                status=args.status,
+                limit=args.limit,
+            )
+            if not results:
+                console.print("[yellow]No missions executed.[/yellow]")
+            else:
+                table = Table(title="Verification Run", box=box.ROUNDED)
+                table.add_column("ID", style="dim")
+                table.add_column("Status", style="bold")
+                table.add_column("Query", style="green")
+                table.add_column("Info")
+                for r in results:
+                    info = ""
+                    if r.get("meta"):
+                        info = json.dumps(r["meta"], ensure_ascii=True)[:120]
+                    if r.get("error"):
+                        info = r["error"][:120]
+                    table.add_row(r["id"], r["status"], (r["query"] or "")[:80], info)
+                console.print(table)
+        elif args.verify_command == "complete":
+            core.set_verification_mission_status(args.mission, args.status, note=args.note)
+            console.print(f"[green]✔ Updated mission[/green] {args.mission} -> {args.status}")
+        else:
+            console.print("[red]Error:[/red] verify requires a subcommand (plan|list|run|complete).")
 
 if __name__ == "__main__":
     main()

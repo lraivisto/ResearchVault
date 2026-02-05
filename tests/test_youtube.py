@@ -20,8 +20,8 @@ def test_youtube_fetch_success(mocker):
     </head>
     </html>
     """
-    mocker.patch("scripts.scuttle.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 0))])
-    mocker.patch("requests.get", return_value=mock_resp)
+    mocker.patch("scripts.scuttle.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
+    mocker.patch("requests.Session.send", return_value=mock_resp)
     
     connector = YouTubeConnector()
     draft = connector.fetch("https://www.youtube.com/watch?v=dQw4w9WgXcQ")

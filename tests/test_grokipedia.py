@@ -16,8 +16,8 @@ def test_grokipedia_fetch_success(mocker):
         "content_text": "AI is the simulation of human intelligence...",
         "references": []
     }
-    mocker.patch("scripts.scuttle.socket.getaddrinfo", return_value=[(None, None, None, None, ("93.184.216.34", 0))])
-    mocker.patch("requests.get", return_value=mock_resp)
+    mocker.patch("scripts.scuttle.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
+    mocker.patch("requests.Session.send", return_value=mock_resp)
     
     connector = GrokipediaConnector()
     draft = connector.fetch("grokipedia://Artificial_intelligence")

@@ -34,8 +34,12 @@ class SafeSession(requests.Session):
         
         # Check size if Content-Length is present
         cl = resp.headers.get("Content-Length")
-        if cl and int(cl) > MAX_FETCH_SIZE:
-            raise ScuttleError(f"Response too large: {cl} bytes")
+        if cl:
+            try:
+                if int(cl) > MAX_FETCH_SIZE:
+                    raise ScuttleError(f"Response too large: {cl} bytes")
+            except (ValueError, TypeError):
+                pass
             
         return resp
 

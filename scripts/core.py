@@ -231,7 +231,7 @@ def check_search(query, ttl_hours=24):
             pass
     return None
 
-def start_project(project_id, name, objective, priority=0):
+def start_project(project_id, name, objective, priority=0, silent: bool = False):
     conn = db.get_connection()
     c = conn.cursor()
     now = datetime.now().isoformat()
@@ -243,7 +243,8 @@ def start_project(project_id, name, objective, priority=0):
     conn.close()
     # Ensure default branch exists.
     ensure_branch(project_id, "main")
-    print(f"Project '{name}' ({project_id}) initialized with priority {priority}.")
+    if not silent:
+        print(f"Project '{name}' ({project_id}) initialized with priority {priority}.")
 
 def log_event(
     project_id,

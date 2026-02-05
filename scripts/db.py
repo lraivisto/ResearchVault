@@ -2,6 +2,7 @@ import sqlite3
 import os
 import uuid
 import json
+import sys
 
 # Path to the research database
 DEFAULT_DB_PATH = os.path.expanduser("~/.researchvault/research_vault.db")
@@ -53,7 +54,7 @@ def _run_migrations(cursor):
     for i, migration_fn in enumerate(migrations):
         version = i + 1
         if version > current_version:
-            print(f"Running migration v{version}...")
+            print(f"Running migration v{version}...", file=sys.stderr)
             migration_fn(cursor)
             if current_version == 0:
                 cursor.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))

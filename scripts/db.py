@@ -45,7 +45,8 @@ def _run_migrations(cursor):
         _migration_v1, # Initial schema
         _migration_v2, # Add artifacts, findings, links
         _migration_v3, # Backfill insights -> findings
-        _migration_v4  # Divergent reasoning: branches + hypotheses + branch_id backfill
+        _migration_v4, # Divergent reasoning: branches + hypotheses + branch_id backfill
+        _migration_v5  # Synthesis engine: local embeddings + synthesis link constraints
     ]
 
     for i, migration_fn in enumerate(migrations):
@@ -193,3 +194,26 @@ def _migration_v4(cursor):
             "UPDATE artifacts SET branch_id = ? WHERE project_id = ? AND (branch_id IS NULL OR branch_id = '')",
             (branch_id, project_id),
         )
+
+def _migration_v5(cursor):
+    """Add embeddings storage and synthesis link constraints."""
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            dims INTEGER NOT NULL,
+            vector BLOB NOT NULL,
+            content_hash TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(entity_type, entity_id, model)
+        )"""
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_entity ON embeddings(entity_type, entity_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model)")
+
+    # Uniqueness only for the new synthesis link type to avoid breaking legacy datasets.
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_links_synthesis_pair ON links(source_id, target_id) WHERE link_type='SYNTHESIS_SIMILARITY'"
+    )

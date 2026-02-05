@@ -13,6 +13,27 @@ from scripts.scuttle import Connector, ArtifactDraft, IngestResult
 class MissingAPIKeyError(Exception):
     pass
 
+def scrub_data(data: Any) -> Any:
+    """
+    Recursively scrub sensitive information from strings, dictionaries, and lists.
+    - Redacts token-like strings.
+    - Redacts local file paths.
+    - Redacts credentials from URLs.
+    """
+    if isinstance(data, str):
+        # 1. Redact credentials from URLs
+        data = re.sub(r'(https?://)([^/:]+):([^/@]+)@', r'\1REDACTED:REDACTED@', data)
+        # 2. Redact common token/key query params
+        data = re.sub(r'([?&](?:api_key|token|auth|key|secret)=)[^&]+', r'\1REDACTED', data, flags=re.I)
+        # 3. Redact local absolute file paths (Unix style)
+        data = re.sub(r'/(?:Users|home|root|etc)/[a-zA-Z0-9._/-]+', '[REDACTED_PATH]', data)
+        return data
+    elif isinstance(data, dict):
+        return {k: scrub_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [scrub_data(i) for i in data]
+    return data
+
 class IngestService:
     """Service to manage connector registration and ingestion routing."""
     
@@ -231,6 +252,7 @@ def check_search(query, ttl_hours=24):
             pass
     return None
 
+@db.retry_on_lock()
 def start_project(project_id, name, objective, priority=0, silent: bool = False):
     conn = db.get_connection()
     c = conn.cursor()
@@ -246,6 +268,7 @@ def start_project(project_id, name, objective, priority=0, silent: bool = False)
     if not silent:
         print(f"Project '{name}' ({project_id}) initialized with priority {priority}.")
 
+@db.retry_on_lock()
 def log_event(
     project_id,
     event_type,
@@ -260,6 +283,11 @@ def log_event(
     c = conn.cursor()
     now = datetime.now().isoformat()
     branch_id = resolve_branch_id(project_id, branch)
+    
+    # Scrub payload
+    payload = scrub_data(payload)
+    source = scrub_data(source)
+    
     c.execute(
         "INSERT INTO events (project_id, event_type, step, payload, confidence, source, tags, timestamp, branch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (project_id, event_type, step, json.dumps(payload), confidence, source, tags, now, branch_id),
@@ -320,11 +348,18 @@ def list_projects():
     conn.close()
     return projects
 
+@db.retry_on_lock()
 def add_insight(project_id, title, content, source_url="", tags="", confidence=1.0, branch: Optional[str] = None):
     conn = db.get_connection()
     c = conn.cursor()
     now = datetime.now().isoformat()
     finding_id = f"fnd_{uuid.uuid4().hex[:8]}"
+    
+    # Scrub sensitive data
+    source_url = scrub_data(source_url)
+    title = scrub_data(title)
+    content = scrub_data(content)
+    
     evidence = json.dumps({"source_url": source_url})
     branch_id = resolve_branch_id(project_id, branch)
     c.execute(
@@ -336,6 +371,7 @@ def add_insight(project_id, title, content, source_url="", tags="", confidence=1
     conn.close()
     return finding_id
 
+@db.retry_on_lock()
 def add_artifact(
     project_id: str,
     path: str,
@@ -348,6 +384,11 @@ def add_artifact(
     branch_id = resolve_branch_id(project_id, branch)
     conn = db.get_connection()
     c = conn.cursor()
+    
+    # Scrub sensitive data from metadata
+    metadata = scrub_data(metadata)
+    path = scrub_data(path)
+    
     c.execute(
         """INSERT INTO artifacts (id, project_id, type, path, metadata, created_at, branch_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -682,6 +723,7 @@ def run_verification_missions(
     conn.close()
     return results
 
+@db.retry_on_lock()
 def add_watch_target(
     project_id: str,
     target_type: str,
@@ -781,6 +823,7 @@ def disable_watch_target(target_id: str) -> None:
     conn.commit()
     conn.close()
 
+@db.retry_on_lock()
 def update_watch_target_run(
     target_id: str,
     *,

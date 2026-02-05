@@ -48,7 +48,8 @@ def _run_migrations(cursor):
         _migration_v3, # Backfill insights -> findings
         _migration_v4, # Divergent reasoning: branches + hypotheses + branch_id backfill
         _migration_v5, # Synthesis engine: local embeddings + synthesis link constraints
-        _migration_v6  # Active verification: missions table
+        _migration_v6, # Active verification: missions table
+        _migration_v7  # Watchdog mode: watch targets + run state
     ]
 
     for i, migration_fn in enumerate(migrations):
@@ -251,3 +252,29 @@ def _migration_v6(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_missions_project_status ON verification_missions(project_id, status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_missions_branch_status ON verification_missions(branch_id, status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_missions_finding ON verification_missions(finding_id)")
+
+def _migration_v7(cursor):
+    """Add watch targets for background scuttling/search."""
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS watch_targets (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            branch_id TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target TEXT NOT NULL,
+            tags TEXT DEFAULT '',
+            interval_s INTEGER DEFAULT 3600,
+            status TEXT DEFAULT 'active',
+            last_run_at TEXT,
+            last_result_hash TEXT DEFAULT '',
+            last_error TEXT DEFAULT '',
+            created_at TEXT,
+            updated_at TEXT,
+            dedup_hash TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(id),
+            FOREIGN KEY(branch_id) REFERENCES branches(id),
+            UNIQUE(dedup_hash)
+        )"""
+    )
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_watch_project_status ON watch_targets(project_id, status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_watch_branch_status ON watch_targets(branch_id, status)")

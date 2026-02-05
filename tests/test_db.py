@@ -81,6 +81,13 @@ def test_init_db_schema(db_conn):
     assert "query" in columns
     assert "status" in columns
 
+    # Watch targets (v7)
+    c.execute("PRAGMA table_info(watch_targets)")
+    columns = {r[1] for r in c.fetchall()}
+    assert "target_type" in columns
+    assert "target" in columns
+    assert "interval_s" in columns
+
 def test_migrations_are_idempotent(db_conn):
     """
     Test that running init_db (and thus migrations) multiple times is safe.

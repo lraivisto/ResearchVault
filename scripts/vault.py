@@ -123,6 +123,30 @@ def main():
     hyp_list.add_argument("--id", required=True)
     hyp_list.add_argument("--branch", default=None, help="Branch name (omit for all)")
 
+    # Artifacts
+    artifact_parser = subparsers.add_parser("artifact", help="Register local artifacts for synthesis/linking")
+    artifact_sub = artifact_parser.add_subparsers(dest="artifact_command")
+
+    artifact_add = artifact_sub.add_parser("add", help="Add an artifact (path on disk)")
+    artifact_add.add_argument("--id", required=True)
+    artifact_add.add_argument("--path", required=True)
+    artifact_add.add_argument("--type", default="FILE")
+    artifact_add.add_argument("--metadata", default="{}", help="JSON metadata blob")
+    artifact_add.add_argument("--branch", default=None, help="Branch name (default: main)")
+
+    artifact_list = artifact_sub.add_parser("list", help="List artifacts")
+    artifact_list.add_argument("--id", required=True)
+    artifact_list.add_argument("--branch", default=None, help="Branch name (default: main)")
+
+    # Synthesis
+    synth_parser = subparsers.add_parser("synthesize", help="Discover links via local embeddings")
+    synth_parser.add_argument("--id", required=True)
+    synth_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    synth_parser.add_argument("--threshold", type=float, default=0.78)
+    synth_parser.add_argument("--top-k", type=int, default=5, help="Max links per entity")
+    synth_parser.add_argument("--max-links", type=int, default=50)
+    synth_parser.add_argument("--dry-run", action="store_true", help="Compute links but do not persist")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -420,6 +444,60 @@ def main():
                 console.print(table)
         else:
             console.print("[red]Error:[/red] hypothesis requires a subcommand (add|list).")
+    elif args.command == "artifact":
+        if args.artifact_command == "add":
+            try:
+                metadata = json.loads(args.metadata or "{}")
+            except json.JSONDecodeError:
+                console.print("[red]Error:[/red] --metadata must be valid JSON.")
+                return
+            artifact_id = core.add_artifact(
+                args.id,
+                args.path,
+                type=args.type,
+                metadata=metadata,
+                branch=args.branch,
+            )
+            console.print(f"[green]✔ Added artifact[/green] {artifact_id}")
+        elif args.artifact_command == "list":
+            rows = core.list_artifacts(args.id, branch=args.branch)
+            if not rows:
+                console.print("[yellow]No artifacts found.[/yellow]")
+            else:
+                table = Table(title=f"Artifacts: {args.id}", box=box.ROUNDED)
+                table.add_column("ID", style="dim")
+                table.add_column("Type", style="cyan")
+                table.add_column("Path", style="green")
+                for (aid, atype, path, metadata, created_at) in rows:
+                    table.add_row(aid, atype, path)
+                console.print(table)
+        else:
+            console.print("[red]Error:[/red] artifact requires a subcommand (add|list).")
+    elif args.command == "synthesize":
+        from scripts.synthesis import synthesize
+
+        links = synthesize(
+            args.id,
+            branch=args.branch,
+            threshold=args.threshold,
+            top_k=args.top_k,
+            max_links=args.max_links,
+            persist=not args.dry_run,
+        )
+        if not links:
+            console.print("[yellow]No links found above threshold.[/yellow]")
+        else:
+            table = Table(title="Synthesis Links", box=box.ROUNDED)
+            table.add_column("Score", justify="right", style="magenta")
+            table.add_column("Source", style="cyan")
+            table.add_column("Target", style="green")
+            for link in links:
+                table.add_row(
+                    f"{link['score']:.3f}",
+                    f"{link['source_label']} ({link['source_id']})",
+                    f"{link['target_label']} ({link['target_id']})",
+                )
+            console.print(table)
 
 if __name__ == "__main__":
     main()

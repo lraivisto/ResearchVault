@@ -13,6 +13,31 @@ class ScuttleError(Exception):
     pass
 
 DEFAULT_TIMEOUT_S = 15
+MAX_FETCH_SIZE = 10 * 1024 * 1024 # 10MB cap
+
+class SafeSession(requests.Session):
+    """
+    Session that enforces safety rules on every request and redirect hop.
+    - No internal/private network access.
+    - No proxies (from environment).
+    - Response size limit.
+    """
+    def __init__(self):
+        super().__init__()
+        self.trust_env = False # Disable proxies from environment
+
+    def send(self, request, **kwargs):
+        _ensure_safe_url(request.url)
+        # Always stream to check size before reading full content
+        kwargs["stream"] = True
+        resp = super().send(request, **kwargs)
+        
+        # Check size if Content-Length is present
+        cl = resp.headers.get("Content-Length")
+        if cl and int(cl) > MAX_FETCH_SIZE:
+            raise ScuttleError(f"Response too large: {cl} bytes")
+            
+        return resp
 
 def _is_blocked_ip(ip: str) -> bool:
     try:
@@ -118,10 +143,10 @@ class RedditScuttler(Scuttler):
 
         headers = {"User-Agent": "ResearchVault/1.0.1"}
         try:
-            _ensure_safe_url(json_url)
-            resp = requests.get(json_url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-            resp.raise_for_status()
-            data = resp.json()
+            with SafeSession() as session:
+                resp = session.get(json_url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+                resp.raise_for_status()
+                data = resp.json()
             
             # Reddit JSON structure: [listing_post, listing_comments]
             post_data = data[0]['data']['children'][0]['data']
@@ -178,11 +203,11 @@ class WebScuttler(Scuttler):
     def scuttle(self, url):
         headers = {"User-Agent": "ResearchVault/1.0.1"}
         try:
-            _ensure_safe_url(url)
-            resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-            resp.raise_for_status()
-            
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            with SafeSession() as session:
+                resp = session.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+                resp.raise_for_status()
+                
+                soup = BeautifulSoup(resp.text, 'html.parser')
             
             title = soup.title.string if soup.title else url
             
@@ -218,10 +243,10 @@ class GrokipediaConnector(Connector):
             
         api_url = f"https://grokipedia-api.com/page/{slug}"
         try:
-            _ensure_safe_url(api_url)
-            resp = requests.get(api_url, timeout=DEFAULT_TIMEOUT_S)
-            resp.raise_for_status()
-            data = resp.json()
+            with SafeSession() as session:
+                resp = session.get(api_url, timeout=DEFAULT_TIMEOUT_S)
+                resp.raise_for_status()
+                data = resp.json()
             
             return ArtifactDraft(
                 title=data.get("title", slug),
@@ -242,11 +267,11 @@ class YouTubeConnector(Connector):
     def fetch(self, source: str) -> ArtifactDraft:
         headers = {"User-Agent": "ResearchVault/1.1.0"}
         try:
-            _ensure_safe_url(source)
-            resp = requests.get(source, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-            resp.raise_for_status()
-            
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            with SafeSession() as session:
+                resp = session.get(source, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+                resp.raise_for_status()
+                
+                soup = BeautifulSoup(resp.text, 'html.parser')
             title = soup.title.string.replace(" - YouTube", "") if soup.title else source
             
             # Metadata-only: extract from meta tags

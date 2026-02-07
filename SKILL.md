@@ -29,6 +29,7 @@ Autonomous state manager for agentic research.
 - **Divergent Reasoning**: Create `branches` and `hypotheses` to explore parallel research paths.
 - **Synthesis Engine**: Automated link-discovery using local embeddings.
 - **Active Verification**: Self-correcting agents via `verification_missions`.
+- **Autonomous Strategist**: Analyze state and recommend a Next Best Action (`vault strategy`).
 - **MCP Server**: Native support for cross-agent collaboration.
 - **Watchdog Mode**: Continuous background monitoring of URLs and queries.
 
@@ -53,7 +54,14 @@ uv run python scripts/vault.py synthesize --id "metal-v1"
 uv run python scripts/vault.py verify plan --id "metal-v1"
 ```
 
-### 4. MCP Server
+### 4. Autonomous Strategist (Next Best Action)
+```bash
+uv run python scripts/vault.py strategy --id "metal-v1"
+uv run python scripts/vault.py strategy --id "metal-v1" --format json
+uv run python scripts/vault.py strategy --id "metal-v1" --execute
+```
+
+### 5. MCP Server
 ```bash
 uv run python scripts/vault.py mcp --transport stdio
 ```

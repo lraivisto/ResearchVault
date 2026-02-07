@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -117,3 +118,43 @@ def test_smoke_branch_and_hypothesis(tmp_path):
 
     text = output_path.read_text()
     assert "Alt Insight" in text
+
+
+def test_smoke_strategy_json(tmp_path):
+    db_path = tmp_path / "vault.db"
+    env = os.environ.copy()
+    env["RESEARCHVAULT_DB"] = str(db_path)
+
+    _run_cli(
+        ["init", "--id", "demo-strat", "--name", "Demo Strat", "--objective", "Strategy smoke test"],
+        env,
+    )
+    _run_cli(
+        [
+            "insight",
+            "--id",
+            "demo-strat",
+            "--add",
+            "--title",
+            "Low confidence seed",
+            "--content",
+            "This should trigger verification planning.",
+            "--tags",
+            "unverified",
+            "--conf",
+            "0.4",
+        ],
+        env,
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.vault", "strategy", "--id", "demo-strat", "--format", "json"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+
+    data = json.loads(result.stdout)
+    assert data["recommendation"]["action"] in {"VERIFY_PLAN", "VERIFY_RUN", "SYNTHESIZE", "SCUTTLE"}

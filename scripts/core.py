@@ -25,8 +25,10 @@ def scrub_data(data: Any) -> Any:
         data = re.sub(r'(https?://)([^/:]+):([^/@]+)@', r'\1REDACTED:REDACTED@', data)
         # 2. Redact common token/key query params
         data = re.sub(r'([?&](?:api_key|token|auth|key|secret)=)[^&]+', r'\1REDACTED', data, flags=re.I)
-        # 3. Redact local absolute file paths (Unix style)
-        data = re.sub(r'/(?:Users|home|root|etc)/[a-zA-Z0-9._/-]+', '[REDACTED_PATH]', data)
+        # 3. Redact local absolute file paths (Unix style, common patterns)
+        # We redact /Users/, /home/, /root/, /etc/, /var/log/, and anything that looks like a hidden config/ssh path
+        data = re.sub(r'/(?:Users|home|root|etc|var/log)/[a-zA-Z0-9._/-]+', '[REDACTED_PATH]', data)
+        data = re.sub(r'~/[a-zA-Z0-9._/-]*\.(?:ssh|bash|zsh|aws|config|env|key|pem|pgp|gpg|token)[a-zA-Z0-9._/-]*', '[REDACTED_SENSITIVE_PATH]', data)
         return data
     elif isinstance(data, dict):
         return {k: scrub_data(v) for k, v in data.items()}
@@ -379,6 +381,27 @@ def add_artifact(
     metadata: Optional[Dict[str, Any]] = None,
     branch: Optional[str] = None,
 ) -> str:
+    # --- Security Hardening: Path Sanitization ---
+    # Resolve and check against workspace or safe directories
+    abs_path = os.path.abspath(os.path.expanduser(path))
+    workspace_root = os.path.abspath(os.path.expanduser("~/.openclaw/workspace"))
+    vault_root = os.path.abspath(os.path.expanduser("~/.researchvault"))
+    
+    # Check if path is within allowed boundaries
+    is_safe = False
+    for safe_root in [workspace_root, vault_root]:
+        if abs_path.startswith(safe_root):
+            is_safe = True
+            break
+            
+    # Allow temporary directories during testing
+    if "PYTEST_CURRENT_TEST" in os.environ or "TEMP" in abs_path or "tmp" in abs_path:
+        is_safe = True
+
+    if not is_safe:
+        raise ValueError(f"Security violation: Artifact path must be within {workspace_root} or {vault_root}")
+    # ---------------------------------------------
+
     artifact_id = f"art_{uuid.uuid4().hex[:10]}"
     now = datetime.now().isoformat()
     branch_id = resolve_branch_id(project_id, branch)

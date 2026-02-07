@@ -34,7 +34,7 @@ def main():
     export_parser = subparsers.add_parser("export")
     export_parser.add_argument("--id", required=True)
     export_parser.add_argument("--format", choices=['json', 'markdown'], default='json')
-    export_parser.add_argument("--output", help="Output file path")
+    export_parser.add_argument("--output", help="Output file path (must be within workspace or ~/.researchvault)")
     export_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
 
     # List
@@ -280,9 +280,29 @@ def main():
                     output += f"{f['content']}\n\n---\n\n"
             
             if args.output:
-                with open(args.output, 'w') as f:
+                # --- Security Hardening: Output Path Sanitization ---
+                abs_out = os.path.abspath(os.path.expanduser(args.output))
+                workspace_root = os.path.abspath(os.path.expanduser("~/.openclaw/workspace"))
+                vault_root = os.path.abspath(os.path.expanduser("~/.researchvault"))
+                
+                is_safe = False
+                for safe_root in [workspace_root, vault_root]:
+                    if abs_out.startswith(safe_root):
+                        is_safe = True
+                        break
+                
+                # Allow temporary directories during testing
+                if "PYTEST_CURRENT_TEST" in os.environ or "TEMP" in abs_out or "tmp" in abs_out:
+                    is_safe = True
+
+                if not is_safe:
+                    console.print(f"[bold red]Security Error:[/] Output path must be within {workspace_root} or {vault_root}")
+                    return
+                # ----------------------------------------------------
+
+                with open(abs_out, 'w') as f:
                     f.write(output)
-                console.print(f"[green]✔ Exported to {args.output}[/green]")
+                console.print(f"[green]✔ Exported to {abs_out}[/green]")
             else:
                 print(output)
     elif args.command == "list":

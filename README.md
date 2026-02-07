@@ -13,6 +13,7 @@ Vault is built CLI-first to close the loop between planning, ingestion, verifica
 *   **Divergent Reasoning**: First-class `branches` + `hypotheses` so agents can explore competing explanations without contaminating the main line.
 *   **Cross-Artifact Synthesis**: Deterministic local embeddings (feature hashing; no model downloads) + similarity links (`links`) across findings and artifacts.
 *   **Active Verification Protocol**: Auto-generated `verification_missions` for low-confidence or `unverified` findings (can run via Brave Search if configured).
+*   **Autonomous Strategist**: Analyze project state (events, findings, branches, queues) and recommend the Next Best Action (`vault strategy`).
 *   **MCP Server**: Expose the Vault over MCP (`python -m scripts.vault mcp` / `python -m scripts.mcp_server`).
 *   **Watchdog Mode**: Periodic ingestion for watched URL targets and query targets.
 *   **Unified Ingestion Engine**: Modular connectors for automated research capture.
@@ -98,6 +99,19 @@ View sorted project lists, high-level summaries, and detailed event logs.
 uv run python -m scripts.vault list
 uv run python -m scripts.vault summary --id "metal-v1"
 uv run python -m scripts.vault status --id "metal-v1"
+```
+
+### 11. Autonomous Strategist (Next Best Action)
+Analyze the current project state and get a recommended plan (optionally scoped to a branch).
+```bash
+uv run python -m scripts.vault strategy --id "metal-v1"
+uv run python -m scripts.vault strategy --id "metal-v1" --branch "alt-hypothesis"
+
+# Machine-readable output (for agents/tools)
+uv run python -m scripts.vault strategy --id "metal-v1" --format json
+
+# Execute the recommended action (safe subset: verification/synthesis)
+uv run python -m scripts.vault strategy --id "metal-v1" --execute
 ```
 
 ## 🛠️ Development & Environment

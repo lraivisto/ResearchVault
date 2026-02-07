@@ -3,7 +3,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 import scripts.core as core
 import scripts.db as db
@@ -376,7 +376,8 @@ def analyze_project_state(
 
     covered = sorted(objective_tokens_set.intersection(findings_tokens))
     if not objective_tokens_set:
-        coverage_score = 0.0
+        # Treat empty/untokenizable objectives as "coverage unknown" rather than zero.
+        coverage_score = 1.0
     else:
         coverage_score = float(len(covered)) / float(len(objective_tokens_set))
 
@@ -583,9 +584,13 @@ def execute_recommendation(
             branch=branch_name,
             limit=int(cfg.verify_run_limit),
         )
+        # Only report ok=True if all missions completed successfully (status="done")
+        ok = bool(results) and all(
+            isinstance(r, dict) and r.get("status") == "done" for r in results
+        )
         return StrategyExecution(
             action=recommendation.action,
-            ok=True,
+            ok=ok,
             details={"missions_executed": len(results), "results": results},
         )
 

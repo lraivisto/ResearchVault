@@ -4,8 +4,8 @@
 # Fail fast; trap will still reap background processes.
 set -euo pipefail
 
-# Kill background processes on exit
-trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
+# Kill background processes on exit (best-effort; don't spam errors during shutdown).
+trap "trap - SIGTERM && kill -- -$$ 2>/dev/null || true" SIGINT SIGTERM EXIT
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"

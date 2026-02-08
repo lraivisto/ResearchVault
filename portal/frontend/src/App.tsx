@@ -26,6 +26,19 @@ function AppContent() {
         }
     });
 
+    // Fetch stats
+    const { data: graphData } = useQuery({
+        queryKey: ['graphData', projectId],
+        queryFn: async () => {
+            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            const url = new URL('http://localhost:8000/api/graph');
+            if (token) url.searchParams.set('token', token);
+            if (projectId) url.searchParams.set('project_id', projectId);
+            const res = await fetch(url.toString());
+            return res.json();
+        }
+    });
+
     const handleNodeSelect = (node: any) => {
         setSelectedNode(node);
     };
@@ -82,6 +95,18 @@ function AppContent() {
                         <span className="mx-2">|</span>
                         <Activity size={12} />
                         <span>ACTIVE AGENT: ONLINE</span>
+                    </div>
+                </div>
+
+                {/* Stats HUD (Top Center-ish) */}
+                <div className="flex gap-8 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/10 p-2 px-6 rounded-lg font-mono">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 uppercase">Vault State</span>
+                        <span className="text-cyan font-bold">{projectsData?.projects?.length || 0} PROJ / {graphData?.nodes?.length || 0} NODES</span>
+                    </div>
+                    <div className="flex flex-col border-l border-white/10 pl-8">
+                        <span className="text-[9px] text-gray-500 uppercase">Uptime</span>
+                        <span className="text-gray-300">6D 02H</span>
                     </div>
                 </div>
 

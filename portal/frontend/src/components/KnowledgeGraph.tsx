@@ -104,16 +104,17 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
                             : (node.group === 'finding' ? '#00f0ff' : '#bd00ff')
                     }
                     linkColor={link => highlightLinks.has(link) ? '#ffae00' : link.color}
-                    nodeRelSize={4}
-                    linkWidth={link => highlightLinks.has(link) ? 3 : 1}
-                    linkDirectionalParticles={1}
-                    linkDirectionalParticleWidth={2}
+                    nodeRelSize={8}
+                    linkWidth={link => highlightLinks.has(link) ? 4 : 1.5}
+                    linkDirectionalParticles={2}
+                    linkDirectionalParticleWidth={3}
+                    linkDirectionalParticleSpeed={0.005}
                     onNodeClick={handleNodeClick}
                     onNodeHover={node => setHoverNode(node || null)}
                     backgroundColor="#050505"
                     // Optimize for performance
                     cooldownTicks={100}
-                    onEngineStop={() => fgRef.current?.zoomToFit(400)}
+                    onEngineStop={() => fgRef.current?.zoomToFit(600, 100)}
                 />
             )}
         </div>

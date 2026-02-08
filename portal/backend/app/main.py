@@ -1,10 +1,21 @@
 
 
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from portal.backend.app.routers import stream, graph, missions
+
+from portal.backend.app.routers import graph, missions, stream
+
 import scripts.db as db
+
+
+def _cors_origins_from_env() -> list[str]:
+    raw = os.getenv("RESEARCHVAULT_PORTAL_CORS_ORIGINS", "http://localhost:5173")
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,14 +27,15 @@ async def lifespan(app: FastAPI):
         print(f"Database initialization failed: {e}")
     yield
 
+
 app = FastAPI(title="ResearchVault Portal", lifespan=lifespan)
 
-# Configure CORS for local development (React frontend)
+# Configurable CORS (dev default is Vite localhost).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite default port
+    allow_origins=_cors_origins_from_env(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -31,6 +43,7 @@ app.add_middleware(
 app.include_router(stream.router, prefix="/api", tags=["stream"])
 app.include_router(graph.router, prefix="/api", tags=["graph"])
 app.include_router(missions.router, prefix="/api", tags=["missions"])
+
 
 @app.get("/health")
 def health_check():

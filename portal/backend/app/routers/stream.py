@@ -4,13 +4,14 @@ import json
 from datetime import datetime
 from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
 import scripts.db as db
+from portal.backend.app.auth import require_portal_token
 from scripts.core import scrub_data
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_portal_token)])
 
 # Global state isn't ideal for scale, but perfect for a single-user local app.
 # We'll use a polling approach per connection for simplicity and robustness with SQLite.
@@ -50,18 +51,21 @@ async def event_generator(last_id: int = 0) -> AsyncGenerator[dict, None]:
                         "id": event_id,
                         "type": event_type,
                         "step": step,
-                        "payload": json.loads(payload) if payload else {}, # Payload is JSON string in DB
+                        "payload": json.loads(payload) if payload else {},  # JSON string in DB
                         "confidence": confidence,
                         "source": source,
                         "tags": tags,
-                        "timestamp": timestamp
+                        "timestamp": timestamp,
                     }
-                    
+
+                    # Scrub before sending to the browser.
+                    event_data = scrub_data(event_data)
+
                     # Yield SSE event
                     yield {
                         "event": "log",
                         "id": str(event_id),
-                        "data": json.dumps(event_data)
+                        "data": json.dumps(event_data),
                     }
                     
                     # If this event suggests a graph update (e.g., finding added), send a specific signal
@@ -80,9 +84,9 @@ async def event_generator(last_id: int = 0) -> AsyncGenerator[dict, None]:
         except Exception as e:
             yield {
                 "event": "error",
-                "data": json.dumps({"error": str(e)})
+                "data": json.dumps(scrub_data({"error": str(e)})),
             }
-            await asyncio.sleep(5) # Backoff on error
+            await asyncio.sleep(5)  # Backoff on error
 
         await asyncio.sleep(0.5) # Poll interval
 

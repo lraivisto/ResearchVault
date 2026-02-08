@@ -41,7 +41,11 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
     const { data: graphData, refetch } = useQuery<GraphData>({
         queryKey: ['graphData'],
         queryFn: async () => {
-            const res = await fetch('http://localhost:8000/api/graph');
+            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            const url = new URL('http://localhost:8000/api/graph');
+            if (token) url.searchParams.set('token', token);
+
+            const res = await fetch(url.toString());
             return res.json();
         },
         // We rely on manual invalidation via SSE signal (lastUpdateTimestamp)

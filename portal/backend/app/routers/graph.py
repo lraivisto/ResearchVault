@@ -1,10 +1,11 @@
 
-from fastapi import APIRouter, Query
-from typing import List, Optional
-import scripts.db as db
-import json
+from fastapi import APIRouter, Depends, Query
+from typing import Optional
 
-router = APIRouter()
+import scripts.db as db
+from portal.backend.app.auth import require_portal_token
+
+router = APIRouter(dependencies=[Depends(require_portal_token)])
 
 @router.get("/graph")
 def get_graph_data(project_id: Optional[str] = None):

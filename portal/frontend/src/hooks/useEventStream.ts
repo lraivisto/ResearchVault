@@ -32,7 +32,13 @@ export function useEventStream(): UseEventStreamReturn {
         if (eventSourceRef.current) return;
 
         setStatus('connecting');
-        const es = new EventSource('http://localhost:8000/api/stream?last_event_id=0');
+
+        const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+        const url = new URL('http://localhost:8000/api/stream');
+        url.searchParams.set('last_event_id', '0');
+        if (token) url.searchParams.set('token', token);
+
+        const es = new EventSource(url.toString());
         eventSourceRef.current = es;
 
         es.onopen = () => {

@@ -1,11 +1,13 @@
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
+
 import scripts.core as core
 import scripts.db as db
+from portal.backend.app.auth import require_portal_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_portal_token)])
 
 class MissionRequest(BaseModel):
     project_id: str

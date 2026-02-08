@@ -2,7 +2,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse

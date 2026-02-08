@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEventStream } from './hooks/useEventStream';
 import KnowledgeGraph from './components/KnowledgeGraph';
 import TelemetryConsole from './components/TelemetryConsole';
@@ -52,7 +52,7 @@ function AppContent() {
     };
 
     return (
-        <div className="relative w-screen h-screen bg-void text-gray-200 overflow-hidden font-sans">
+        <div className="relative w-screen h-screen bg-[#050505] text-gray-200 overflow-hidden font-sans">
             {/* Background Graph Layer */}
             <div className="absolute inset-0 z-0">
                 <KnowledgeGraph

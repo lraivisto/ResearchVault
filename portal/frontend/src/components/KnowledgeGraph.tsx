@@ -1,6 +1,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import ForceGraph2D, { ForceGraphMethods } from 'react-force-graph-2d';
+import ForceGraph2D from 'react-force-graph-2d';
+import type { ForceGraphMethods, LinkObject, NodeObject } from 'react-force-graph-2d';
 import { useQuery } from '@tanstack/react-query';
 
 interface GraphNode {
@@ -31,28 +32,15 @@ interface KnowledgeGraphProps {
     lastUpdateTimestamp: string | null;
     projectId?: string;
     searchQuery?: string;
+    token: string | null;
 }
 
-const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp, projectId, searchQuery }) => {
-    const fgRef = useRef<ForceGraphMethods>();
-    const [highlightNodes, setHighlightNodes] = useState(new Set());
-    const [highlightLinks, setHighlightLinks] = useState(new Set());
+const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp, projectId, searchQuery, token }) => {
+    const fgRef = useRef<
+        ForceGraphMethods<NodeObject<GraphNode>, LinkObject<GraphNode, GraphLink>>
+    >();
+    const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
     const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
-
-    // Filter nodes based on search query
-    useEffect(() => {
-        if (!searchQuery) {
-            setHighlightNodes(new Set());
-            return;
-        }
-        
-        const matches = graphData?.nodes.filter(n => 
-            n.label.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            n.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-        ).map(n => n.id) || [];
-        
-        setHighlightNodes(new Set(matches));
-    }, [searchQuery, graphData]);
 
     // Color palette for different entity types/groups
     const COLORS = {
@@ -84,19 +72,40 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
 
     // Fetch graph data
     const { data: graphData, refetch } = useQuery<GraphData>({
-        queryKey: ['graphData', projectId],
+        queryKey: ['graphData', projectId, token],
         queryFn: async () => {
-            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            if (!token) throw new Error('AUTH_REQUIRED');
             const url = new URL('http://localhost:8000/api/graph');
-            if (token) url.searchParams.set('token', token);
+            url.searchParams.set('token', token);
             if (projectId) url.searchParams.set('project_id', projectId);
 
             const res = await fetch(url.toString());
             return res.json();
         },
+        enabled: !!token,
         // We rely on manual invalidation via SSE signal (lastUpdateTimestamp)
         staleTime: Infinity,
     });
+
+    // Filter nodes based on search query
+    useEffect(() => {
+        if (!searchQuery) {
+            setHighlightNodes(new Set());
+            return;
+        }
+
+        const q = searchQuery.toLowerCase();
+        const matches =
+            graphData?.nodes
+                .filter(
+                    (n) =>
+                        n.label.toLowerCase().includes(q) ||
+                        n.tags?.some((t) => t.toLowerCase().includes(q)),
+                )
+                .map((n) => n.id) || [];
+
+        setHighlightNodes(new Set(matches));
+    }, [searchQuery, graphData]);
 
     // Re-fetch when timestamp updates
     useEffect(() => {
@@ -143,9 +152,9 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
                     graphData={graphData}
                     nodeLabel="label"
                     nodeColor={getNodeColor}
-                    linkColor={link => highlightLinks.has(link) ? '#ffffff' : link.color}
+                    linkColor="color"
                     nodeRelSize={8}
-                    linkWidth={link => highlightLinks.has(link) ? 4 : 1.5}
+                    linkWidth={1.5}
                     linkDirectionalParticles={2}
                     linkDirectionalParticleWidth={3}
                     linkDirectionalParticleSpeed={0.005}

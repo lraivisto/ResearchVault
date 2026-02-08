@@ -1,7 +1,6 @@
 
-import React, { useState } from 'react';
-import { clsx } from 'clsx';
-import { X, Search, Zap, Crosshair } from 'lucide-react';
+import { useState } from 'react';
+import { X, Search, Zap } from 'lucide-react';
 
 interface InspectorPanelProps {
     node: any; // Using any for flexibility with graph data

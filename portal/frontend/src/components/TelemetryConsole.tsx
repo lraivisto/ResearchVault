@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { clsx } from 'clsx';
 import { LogEvent } from '../hooks/useEventStream';
 

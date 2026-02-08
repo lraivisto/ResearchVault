@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { useEventStream } from './hooks/useEventStream';
 import KnowledgeGraph from './components/KnowledgeGraph';
@@ -10,13 +10,14 @@ import { Activity, Radio, FolderTree, Search } from 'lucide-react';
 const queryClient = new QueryClient();
 
 function AppContent() {
+    const token =
+        (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) ||
+        new URLSearchParams(window.location.search).get('token');
+
     const [projectId, setProjectId] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState<string>('');
-    const { logs, status, lastGraphUpdate } = useEventStream(projectId);
+    const { logs, status, lastGraphUpdate } = useEventStream(token, projectId);
     const [selectedNode, setSelectedNode] = useState<any>(null);
-
-    const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || 
-                  new URLSearchParams(window.location.search).get('token');
 
     // Fetch projects for selector
     const { data: projectsData, error: projectsError } = useQuery({
@@ -29,7 +30,22 @@ function AppContent() {
             if (res.status === 401 || res.status === 403) throw new Error('AUTH_FAILED');
             return res.json();
         },
-        retry: false
+        enabled: !!token,
+        retry: false,
+    });
+
+    // Fetch stats (nodes/links count)
+    const { data: graphData } = useQuery({
+        queryKey: ['graphData', projectId, token],
+        queryFn: async () => {
+            if (!token) throw new Error('AUTH_REQUIRED');
+            const url = new URL('http://localhost:8000/api/graph');
+            url.searchParams.set('token', token);
+            if (projectId) url.searchParams.set('project_id', projectId);
+            const res = await fetch(url.toString());
+            return res.json();
+        },
+        enabled: !!token,
     });
 
     if (!token || (projectsError as any)?.message === 'AUTH_REQUIRED') {
@@ -62,28 +78,15 @@ function AppContent() {
         );
     }
 
-    // Fetch stats
-    const { data: graphData } = useQuery({
-        queryKey: ['graphData', projectId],
-        queryFn: async () => {
-            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
-            const url = new URL('http://localhost:8000/api/graph');
-            if (token) url.searchParams.set('token', token);
-            if (projectId) url.searchParams.set('project_id', projectId);
-            const res = await fetch(url.toString());
-            return res.json();
-        }
-    });
-
     const handleNodeSelect = (node: any) => {
         setSelectedNode(node);
     };
 
     const handleDispatchMission = async (type: string, findingId: string) => {
         try {
-            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            if (!token) return;
             const url = new URL('http://localhost:8000/api/missions');
-            if (token) url.searchParams.set('token', token);
+            url.searchParams.set('token', token);
 
             await fetch(url.toString(), {
                 method: 'POST',
@@ -109,6 +112,7 @@ function AppContent() {
                     lastUpdateTimestamp={lastGraphUpdate}
                     projectId={projectId}
                     searchQuery={searchQuery}
+                    token={token}
                 />
             </div>
 

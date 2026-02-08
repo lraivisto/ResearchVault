@@ -59,6 +59,12 @@ const InspectorPanel: React.FC<InspectorPanelProps> = ({ node, onClose, onDispat
                         <span className="text-gray-500">TYPE</span>
                         <span className="text-bio-400">{node.group?.toUpperCase()}</span>
                     </div>
+                    <div className="py-2 border-b border-white/5">
+                        <span className="text-gray-500 block mb-1 uppercase tracking-tighter">Content</span>
+                        <div className="text-gray-300 bg-black/20 p-2 rounded max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                            {node.content || "No content summary available."}
+                        </div>
+                    </div>
                     <div className="flex flex-wrap gap-2 pt-2">
                         {node.tags && node.tags.map((tag: string) => (
                             <span key={tag} className="px-2 py-0.5 bg-white/5 rounded text-gray-400 text-[10px] uppercase">

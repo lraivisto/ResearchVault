@@ -16,7 +16,7 @@ def get_graph_data(project_id: Optional[str] = None):
     
     # 1. Fetch Nodes (Findings)
     # If project_id is provided, filter by it.
-    query_findings = "SELECT id, title, confidence, tags, created_at, project_id FROM findings"
+    query_findings = "SELECT id, title, content, confidence, tags, created_at, project_id FROM findings"
     params_findings = []
     
     if project_id:
@@ -30,11 +30,12 @@ def get_graph_data(project_id: Optional[str] = None):
     finding_ids = set()
     
     for f in findings:
-        f_id, title, confidence, tags, created_at, p_id = f
+        f_id, title, content, confidence, tags, created_at, p_id = f
         finding_ids.add(f_id)
         nodes.append({
             "id": f_id,
             "label": title,
+            "content": content,
             "group": "finding",
             "val": (confidence or 0.5) * 10,  # Size based on confidence
             "tags": (tags or "").split(","),

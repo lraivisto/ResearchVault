@@ -21,6 +21,19 @@ class WatchTargetRequest(BaseModel):
     target_type: str = "query" # url or query
     tags: Optional[str] = ""
 
+@router.get("/projects")
+def list_projects():
+    """
+    Returns a list of all project IDs present in the database.
+    """
+    conn = db.get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT project_id FROM findings UNION SELECT DISTINCT project_id FROM events")
+    projects = [row[0] for row in c.fetchall() if row[0]]
+    conn.close()
+    return {"projects": sorted(projects)}
+
+
 @router.post("/missions")
 def create_mission(req: MissionRequest):
     """

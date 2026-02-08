@@ -16,7 +16,7 @@ router = APIRouter(dependencies=[Depends(require_portal_token)])
 # Global state isn't ideal for scale, but perfect for a single-user local app.
 # We'll use a polling approach per connection for simplicity and robustness with SQLite.
 
-async def event_generator(last_id: int = 0) -> AsyncGenerator[dict, None]:
+async def event_generator(project_id: Optional[str] = None, last_id: int = 0) -> AsyncGenerator[dict, None]:
     """
     Polls the SQLite database for new events and yields them as SSE messages.
     """
@@ -34,10 +34,16 @@ async def event_generator(last_id: int = 0) -> AsyncGenerator[dict, None]:
             c = conn.cursor()
             
             # Fetch events newer than current_id
-            c.execute(
-                "SELECT id, event_type, step, payload, confidence, source, tags, timestamp FROM events WHERE id > ? ORDER BY id ASC LIMIT 50",
-                (current_id,)
-            )
+            if project_id:
+                c.execute(
+                    "SELECT id, event_type, step, payload, confidence, source, tags, timestamp FROM events WHERE id > ? AND project_id = ? ORDER BY id ASC LIMIT 50",
+                    (current_id, project_id)
+                )
+            else:
+                c.execute(
+                    "SELECT id, event_type, step, payload, confidence, source, tags, timestamp FROM events WHERE id > ? ORDER BY id ASC LIMIT 50",
+                    (current_id,)
+                )
             rows = c.fetchall()
             conn.close()
 
@@ -91,5 +97,5 @@ async def event_generator(last_id: int = 0) -> AsyncGenerator[dict, None]:
         await asyncio.sleep(0.5) # Poll interval
 
 @router.get("/stream")
-async def stream_events(last_event_id: int = 0):
-    return EventSourceResponse(event_generator(last_event_id))
+async def stream_events(project_id: Optional[str] = None, last_event_id: int = 0):
+    return EventSourceResponse(event_generator(project_id, last_event_id))

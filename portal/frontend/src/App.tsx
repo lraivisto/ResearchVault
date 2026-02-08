@@ -5,13 +5,26 @@ import { useEventStream } from './hooks/useEventStream';
 import KnowledgeGraph from './components/KnowledgeGraph';
 import TelemetryConsole from './components/TelemetryConsole';
 import InspectorPanel from './components/InspectorPanel';
-import { Activity, Radio } from 'lucide-react';
+import { Activity, Radio, FolderTree } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
 function AppContent() {
-    const { logs, status, lastGraphUpdate } = useEventStream();
+    const [projectId, setProjectId] = useState<string>('');
+    const { logs, status, lastGraphUpdate } = useEventStream(projectId);
     const [selectedNode, setSelectedNode] = useState<any>(null);
+
+    // Fetch projects for selector
+    const { data: projectsData } = useQuery({
+        queryKey: ['projects'],
+        queryFn: async () => {
+            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            const url = new URL('http://localhost:8000/api/projects');
+            if (token) url.searchParams.set('token', token);
+            const res = await fetch(url.toString());
+            return res.json();
+        }
+    });
 
     const handleNodeSelect = (node: any) => {
         setSelectedNode(node);
@@ -19,11 +32,15 @@ function AppContent() {
 
     const handleDispatchMission = async (type: string, findingId: string) => {
         try {
-            await fetch('http://localhost:8000/api/missions', {
+            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            const url = new URL('http://localhost:8000/api/missions');
+            if (token) url.searchParams.set('token', token);
+
+            await fetch(url.toString(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    project_id: selectedNode?.project_id || 'unknown', // Ideally node data has project_id
+                    project_id: selectedNode?.project_id || projectId || 'unknown',
                     finding_id: findingId,
                     mission_type: type,
                 }),
@@ -41,6 +58,7 @@ function AppContent() {
                 <KnowledgeGraph
                     onNodeSelect={handleNodeSelect}
                     lastUpdateTimestamp={lastGraphUpdate}
+                    projectId={projectId}
                 />
             </div>
 
@@ -65,6 +83,24 @@ function AppContent() {
                         <Activity size={12} />
                         <span>ACTIVE AGENT: ONLINE</span>
                     </div>
+                </div>
+
+                {/* Project Selector */}
+                <div className="flex items-center gap-4 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/20 p-2 rounded-lg">
+                    <div className="flex items-center gap-2 text-cyan/70 font-mono text-xs uppercase tracking-widest px-2">
+                        <FolderTree size={16} />
+                        Project
+                    </div>
+                    <select 
+                        className="bg-void border border-cyan/30 text-cyan font-mono text-xs p-1 px-3 rounded outline-none focus:border-cyan hover:bg-cyan/10 transition-colors"
+                        value={projectId}
+                        onChange={(e) => setProjectId(e.target.value)}
+                    >
+                        <option value="">ALL PROJECTS</option>
+                        {projectsData?.projects?.map((p: string) => (
+                            <option key={p} value={p}>{p.toUpperCase()}</option>
+                        ))}
+                    </select>
                 </div>
             </header>
 

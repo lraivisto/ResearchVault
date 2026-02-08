@@ -18,7 +18,7 @@ interface UseEventStreamReturn {
     lastGraphUpdate: string | null;
 }
 
-export function useEventStream(): UseEventStreamReturn {
+export function useEventStream(projectId?: string): UseEventStreamReturn {
     const [logs, setLogs] = useState<LogEvent[]>([]);
     const [status, setStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
     const [lastGraphUpdate, setLastGraphUpdate] = useState<string | null>(null);
@@ -28,15 +28,15 @@ export function useEventStream(): UseEventStreamReturn {
     const MAX_LOGS = 100;
 
     useEffect(() => {
-        // Only connect if not already connected
-        if (eventSourceRef.current) return;
+        // Reset logs when project changes
+        setLogs([]);
 
         setStatus('connecting');
-
         const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
         const url = new URL('http://localhost:8000/api/stream');
         url.searchParams.set('last_event_id', '0');
         if (token) url.searchParams.set('token', token);
+        if (projectId) url.searchParams.set('project_id', projectId);
 
         const es = new EventSource(url.toString());
         eventSourceRef.current = es;
@@ -80,7 +80,7 @@ export function useEventStream(): UseEventStreamReturn {
             es.close();
             eventSourceRef.current = null;
         };
-    }, []);
+    }, [projectId]);
 
     return { logs, status, lastGraphUpdate };
 }

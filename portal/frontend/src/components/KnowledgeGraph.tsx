@@ -29,9 +29,10 @@ interface GraphData {
 interface KnowledgeGraphProps {
     onNodeSelect: (node: GraphNode) => void;
     lastUpdateTimestamp: string | null;
+    projectId?: string;
 }
 
-const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp }) => {
+const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp, projectId }) => {
     const fgRef = useRef<ForceGraphMethods>();
     const [highlightNodes, setHighlightNodes] = useState(new Set());
     const [highlightLinks, setHighlightLinks] = useState(new Set());
@@ -39,11 +40,12 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
 
     // Fetch graph data
     const { data: graphData, refetch } = useQuery<GraphData>({
-        queryKey: ['graphData'],
+        queryKey: ['graphData', projectId],
         queryFn: async () => {
             const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
             const url = new URL('http://localhost:8000/api/graph');
             if (token) url.searchParams.set('token', token);
+            if (projectId) url.searchParams.set('project_id', projectId);
 
             const res = await fetch(url.toString());
             return res.json();

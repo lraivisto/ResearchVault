@@ -12,7 +12,10 @@ import scripts.db as db
 
 
 def _cors_origins_from_env() -> list[str]:
-    raw = os.getenv("RESEARCHVAULT_PORTAL_CORS_ORIGINS", "http://localhost:5173")
+    raw = os.getenv(
+        "RESEARCHVAULT_PORTAL_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
     origins = [o.strip() for o in raw.split(",") if o.strip()]
     return origins
 
@@ -48,4 +51,3 @@ app.include_router(missions.router, prefix="/api", tags=["missions"])
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "1.0.0"}
-

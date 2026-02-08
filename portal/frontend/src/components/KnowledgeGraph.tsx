@@ -30,13 +30,57 @@ interface KnowledgeGraphProps {
     onNodeSelect: (node: GraphNode) => void;
     lastUpdateTimestamp: string | null;
     projectId?: string;
+    searchQuery?: string;
 }
 
-const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp, projectId }) => {
+const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdateTimestamp, projectId, searchQuery }) => {
     const fgRef = useRef<ForceGraphMethods>();
     const [highlightNodes, setHighlightNodes] = useState(new Set());
     const [highlightLinks, setHighlightLinks] = useState(new Set());
     const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+
+    // Filter nodes based on search query
+    useEffect(() => {
+        if (!searchQuery) {
+            setHighlightNodes(new Set());
+            return;
+        }
+        
+        const matches = graphData?.nodes.filter(n => 
+            n.label.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            n.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+        ).map(n => n.id) || [];
+        
+        setHighlightNodes(new Set(matches));
+    }, [searchQuery, graphData]);
+
+    // Color palette for different entity types/groups
+    const COLORS = {
+        finding: '#00f0ff',
+        artifact: '#bd00ff',
+        insight: '#ffae00',
+        cluster: ['#00ff95', '#00bcff', '#7000ff', '#ff0055', '#ff9500']
+    };
+
+    const getNodeColor = (node: GraphNode) => {
+        if (hoverNode === node) return '#ffffff';
+        if (searchQuery && highlightNodes.has(node.id)) return '#ffae00'; // Amber for search matches
+        
+        let baseColor = node.group === 'finding' ? COLORS.finding : COLORS.artifact;
+        
+        // Dim if search is active and this node doesn't match
+        if (searchQuery && !highlightNodes.has(node.id)) {
+            return `${baseColor}20`; // 20% opacity
+        }
+
+        // Simple cluster-based coloring if available
+        if (node.cluster) {
+            const clusterIdx = parseInt(node.cluster) % COLORS.cluster.length;
+            return COLORS.cluster[clusterIdx];
+        }
+
+        return baseColor;
+    };
 
     // Fetch graph data
     const { data: graphData, refetch } = useQuery<GraphData>({
@@ -98,12 +142,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
                     ref={fgRef}
                     graphData={graphData}
                     nodeLabel="label"
-                    nodeColor={node =>
-                        hoverNode === node || highlightNodes.has(node.id)
-                            ? '#ffae00'
-                            : (node.group === 'finding' ? '#00f0ff' : '#bd00ff')
-                    }
-                    linkColor={link => highlightLinks.has(link) ? '#ffae00' : link.color}
+                    nodeColor={getNodeColor}
+                    linkColor={link => highlightLinks.has(link) ? '#ffffff' : link.color}
                     nodeRelSize={8}
                     linkWidth={link => highlightLinks.has(link) ? 4 : 1.5}
                     linkDirectionalParticles={2}

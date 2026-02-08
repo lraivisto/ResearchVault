@@ -5,26 +5,62 @@ import { useEventStream } from './hooks/useEventStream';
 import KnowledgeGraph from './components/KnowledgeGraph';
 import TelemetryConsole from './components/TelemetryConsole';
 import InspectorPanel from './components/InspectorPanel';
-import { Activity, Radio, FolderTree } from 'lucide-react';
+import { Activity, Radio, FolderTree, Search } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
 function AppContent() {
     const [projectId, setProjectId] = useState<string>('');
+    const [searchQuery, setSearchQuery] = useState<string>('');
     const { logs, status, lastGraphUpdate } = useEventStream(projectId);
     const [selectedNode, setSelectedNode] = useState<any>(null);
 
+    const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || 
+                  new URLSearchParams(window.location.search).get('token');
+
     // Fetch projects for selector
-    const { data: projectsData } = useQuery({
-        queryKey: ['projects'],
+    const { data: projectsData, error: projectsError } = useQuery({
+        queryKey: ['projects', token],
         queryFn: async () => {
-            const token = (import.meta.env.VITE_RESEARCHVAULT_PORTAL_TOKEN as string | undefined) || undefined;
+            if (!token) throw new Error('AUTH_REQUIRED');
             const url = new URL('http://localhost:8000/api/projects');
-            if (token) url.searchParams.set('token', token);
+            url.searchParams.set('token', token);
             const res = await fetch(url.toString());
+            if (res.status === 401 || res.status === 403) throw new Error('AUTH_FAILED');
             return res.json();
-        }
+        },
+        retry: false
     });
+
+    if (!token || (projectsError as any)?.message === 'AUTH_REQUIRED') {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-[#050505] font-mono text-cyan p-10 text-center">
+                <div className="w-20 h-20 border-2 border-cyan/30 rounded-full flex items-center justify-center mb-8 animate-pulse shadow-[0_0_20px_rgba(0,240,255,0.2)]">
+                    <Radio size={40} />
+                </div>
+                <h1 className="text-3xl font-bold tracking-[0.3em] mb-4 text-glow">SYSTEM LOCKED</h1>
+                <p className="text-gray-500 max-w-md leading-relaxed mb-8">
+                    NEURAL LINK REQUIRES AUTHENTICATION TOKEN. <br/>
+                    PLEASE ACCESS VIA SECURE UPLINK OR PROVIDE <code className="text-cyan/80">?token=...</code>
+                </p>
+                <div className="text-[10px] text-gray-700 uppercase tracking-widest border-t border-white/5 pt-8">
+                    Status: Awaiting Valid Handshake...
+                </div>
+            </div>
+        );
+    }
+
+    if ((projectsError as any)?.message === 'AUTH_FAILED') {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-[#050505] font-mono text-red-500 p-10 text-center">
+                <h1 className="text-3xl font-bold tracking-[0.3em] mb-4">ACCESS DENIED</h1>
+                <p className="text-gray-500 max-w-md leading-relaxed">
+                    INVALID TOKEN PROVIDED. <br/>
+                    AUTHORIZATION REVOKED.
+                </p>
+            </div>
+        );
+    }
 
     // Fetch stats
     const { data: graphData } = useQuery({
@@ -72,6 +108,7 @@ function AppContent() {
                     onNodeSelect={handleNodeSelect}
                     lastUpdateTimestamp={lastGraphUpdate}
                     projectId={projectId}
+                    searchQuery={searchQuery}
                 />
             </div>
 
@@ -111,21 +148,34 @@ function AppContent() {
                 </div>
 
                 {/* Project Selector */}
-                <div className="flex items-center gap-4 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/20 p-2 rounded-lg">
-                    <div className="flex items-center gap-2 text-cyan/70 font-mono text-xs uppercase tracking-widest px-2">
-                        <FolderTree size={16} />
-                        Project
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/20 p-2 rounded-lg group focus-within:border-cyan/50 transition-all">
+                        <Search size={16} className="text-cyan/50 group-focus-within:text-cyan ml-2" />
+                        <input
+                            type="text"
+                            placeholder="SEARCH VAULT..."
+                            className="bg-transparent border-none outline-none text-cyan font-mono text-xs w-48 placeholder:text-cyan/20 p-1"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
                     </div>
-                    <select 
-                        className="bg-void border border-cyan/30 text-cyan font-mono text-xs p-1 px-3 rounded outline-none focus:border-cyan hover:bg-cyan/10 transition-colors"
-                        value={projectId}
-                        onChange={(e) => setProjectId(e.target.value)}
-                    >
-                        <option value="">ALL PROJECTS</option>
-                        {projectsData?.projects?.map((p: string) => (
-                            <option key={p} value={p}>{p.toUpperCase()}</option>
-                        ))}
-                    </select>
+
+                    <div className="flex items-center gap-4 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/20 p-2 rounded-lg">
+                        <div className="flex items-center gap-2 text-cyan/70 font-mono text-xs uppercase tracking-widest px-2">
+                            <FolderTree size={16} />
+                            Project
+                        </div>
+                        <select 
+                            className="bg-void border border-cyan/30 text-cyan font-mono text-xs p-1 px-3 rounded outline-none focus:border-cyan hover:bg-cyan/10 transition-colors"
+                            value={projectId}
+                            onChange={(e) => setProjectId(e.target.value)}
+                        >
+                            <option value="">ALL PROJECTS</option>
+                            {projectsData?.projects?.map((p: string) => (
+                                <option key={p} value={p}>{p.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </header>
 
@@ -137,6 +187,17 @@ function AppContent() {
                 </div>
                 <TelemetryConsole logs={logs} />
             </div>
+
+            {/* Project Context Overlay (Center Left) */}
+            {projectId && !selectedNode && (
+                <div className="absolute top-32 left-6 w-80 z-10 pointer-events-auto bg-black/40 backdrop-blur-md border border-cyan/20 p-4 rounded-lg font-mono animate-in fade-in slide-in-from-left-4 duration-500">
+                    <div className="text-[10px] text-cyan/50 uppercase tracking-[0.2em] mb-1">Active Project Context</div>
+                    <h2 className="text-lg font-bold text-white mb-2 uppercase">{projectId}</h2>
+                    <div className="text-xs text-gray-400 leading-relaxed italic border-l-2 border-cyan/30 pl-3">
+                        "Conducting high-velocity intelligence gathering on {projectId} parameters. Scaling neural connections..."
+                    </div>
+                </div>
+            )}
 
             {/* Inspector Panel (Right Interaction Zone) */}
             {selectedNode && (

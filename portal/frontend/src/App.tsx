@@ -716,7 +716,7 @@ function MainApp() {
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full border p-2 rounded"
+            className="w-full border p-2 rounded text-gray-900 bg-white"
             placeholder="Token"
           />
           <button

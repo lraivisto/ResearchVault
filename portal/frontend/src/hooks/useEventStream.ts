@@ -24,6 +24,7 @@ export function useEventStream(token: string | null, projectId?: string): UseEve
     const [status, setStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
     const [lastGraphUpdate, setLastGraphUpdate] = useState<string | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const logBuffer = useRef<LogEvent[]>([]);
 
     // Keep logs limited to last 100 to prevent memory issues
     const MAX_LOGS = 100;
@@ -60,21 +61,30 @@ export function useEventStream(token: string | null, projectId?: string): UseEve
         es.addEventListener('log', (event) => {
             try {
                 const newLog = JSON.parse(event.data) as LogEvent;
-                setLogs(prev => {
-                    const updated = [newLog, ...prev];
-                    return updated.slice(0, MAX_LOGS);
-                });
+                logBuffer.current.unshift(newLog);
             } catch (e) {
                 console.error('Failed to parse log event', e);
             }
         });
+
+        // Flush buffer every 200ms
+        const flushInterval = setInterval(() => {
+            if (logBuffer.current.length > 0) {
+                setLogs(prev => {
+                    const updated = [...logBuffer.current, ...prev];
+                    logBuffer.current = [];
+                    return updated.slice(0, MAX_LOGS);
+                });
+            }
+        }, 200);
 
         // Listen for 'graph_update' signals
         es.addEventListener('graph_update', (event) => {
             const data = JSON.parse(event.data);
             console.log('Graph update signal received:', data.reason);
             setLastGraphUpdate(Date.now().toString());
-        });
+        });clearInterval(flushInterval);
+            
 
         // Listen for 'pulse'
         es.addEventListener('pulse', () => {

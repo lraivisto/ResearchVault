@@ -40,6 +40,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
     const fgRef = useRef<
         ForceGraphMethods<NodeObject<GraphNode>, LinkObject<GraphNode, GraphLink>>
     >();
+    const isInitialized = useRef(false);
     const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
     const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
 
@@ -117,9 +118,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
 
     // Adjust graph view on first load
     useEffect(() => {
-        if (fgRef.current && graphData?.nodes.length) {
+        if (fgRef.current && graphData?.nodes.length && !isInitialized.current) {
             fgRef.current.d3Force('charge')?.strength(-100);
             fgRef.current.zoomToFit(400);
+            isInitialized.current = true;
         }
     }, [graphData]);
 
@@ -164,7 +166,11 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
                     backgroundColor="#050505"
                     // Optimize for performance
                     cooldownTicks={100}
-                    onEngineStop={() => fgRef.current?.zoomToFit(600, 100)}
+                    onEngineStop={() => {
+                        if (!isInitialized.current) {
+                            fgRef.current?.zoomToFit(600, 100);
+                        }
+                    }}
                 />
             )}
         </div>

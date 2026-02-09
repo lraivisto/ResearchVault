@@ -220,6 +220,16 @@ function AppContent() {
 }
 
 export default function App() {
+    const token = localStorage.getItem('RESEARCHVAULT_PORTAL_TOKEN');
+
+    if (!token) {
+        return (
+            <div className="w-screen h-screen bg-void flex items-center justify-center text-red-500 font-mono">
+                ACCESS DENIED: MISSING AUTH TOKEN
+            </div>
+        );
+    }
+
     return (
         <QueryClientProvider client={queryClient}>
             <AppContent />

@@ -707,8 +707,8 @@ function MainApp() {
   if (!authed) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4 font-mono">
-        <div className="bg-white p-8 rounded shadow border max-w-sm w-full space-y-4">
-          <h1 className="text-xl font-bold">ResearchVault Portal — Login</h1>
+        <div className="bg-white p-8 rounded shadow border max-w-sm w-full space-y-4 text-gray-900">
+          <h1 className="text-xl font-bold text-gray-900">ResearchVault Portal — Login</h1>
           <div className="text-sm text-gray-600">
             Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code>. The token is never placed in URLs.
           </div>

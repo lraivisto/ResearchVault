@@ -1,14 +1,12 @@
-
-
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from portal.backend.app.routers import graph, missions, stream
-
-import scripts.db as db
+from portal.backend.app.routers import auth as auth_router
+from portal.backend.app.routers import vault as vault_router
+from portal.backend.app.vault_exec import run_vault
 
 
 def _cors_origins_from_env() -> list[str]:
@@ -22,18 +20,17 @@ def _cors_origins_from_env() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Ensure DB is migrated
+    # Startup: ensure DB exists/migrated via the CLI (single source of truth).
     try:
-        db.init_db()
-        print("Database initialized and migrated.")
+        run_vault(["list"], timeout_s=30)
     except Exception as e:
-        print(f"Database initialization failed: {e}")
+        # Keep startup resilient; portal can still start even if vault init fails.
+        print(f"Vault initialization via CLI failed: {e}")
     yield
 
 
 app = FastAPI(title="ResearchVault Portal", lifespan=lifespan)
 
-# Configurable CORS (dev default is Vite localhost).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins_from_env(),
@@ -42,10 +39,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(stream.router, prefix="/api", tags=["stream"])
-app.include_router(graph.router, prefix="/api", tags=["graph"])
-app.include_router(missions.router, prefix="/api", tags=["missions"])
+app.include_router(auth_router.router, prefix="/api", tags=["auth"])
+app.include_router(vault_router.router, prefix="/api", tags=["vault"])
 
 
 @app.get("/health")

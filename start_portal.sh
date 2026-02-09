@@ -17,15 +17,14 @@ echo "Cleaning up any old portal processes..."
 pkill -f "run_portal.py" || true
 pkill -f "vite --port 5173" || true
 
-# Auth: backend requires RESEARCHVAULT_PORTAL_TOKEN. We'll generate one if not provided.
+# Auth: backend requires RESEARCHVAULT_PORTAL_TOKEN.
+# SECURITY: We do NOT generate or print tokens here (prevents token leakage into logs/history).
 if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
-    RESEARCHVAULT_PORTAL_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
-    export RESEARCHVAULT_PORTAL_TOKEN
-    echo "Generated RESEARCHVAULT_PORTAL_TOKEN for this session."
+    echo "Error: RESEARCHVAULT_PORTAL_TOKEN is not set." >&2
+    echo "Set it in your shell before starting the portal, e.g.:" >&2
+    echo "  export RESEARCHVAULT_PORTAL_TOKEN='...your token...'" >&2
+    exit 1
 fi
-
-# Pass token into the Vite dev server (client reads VITE_* env vars).
-export VITE_RESEARCHVAULT_PORTAL_TOKEN="${VITE_RESEARCHVAULT_PORTAL_TOKEN:-$RESEARCHVAULT_PORTAL_TOKEN}"
 
 # Dev CORS defaults (frontend may be opened as localhost or 127.0.0.1).
 export RESEARCHVAULT_PORTAL_CORS_ORIGINS="${RESEARCHVAULT_PORTAL_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
@@ -103,6 +102,5 @@ popd >/dev/null
 echo "Portal is running!"
 echo "Backend:  http://localhost:8000/docs"
 echo "Frontend: http://localhost:5173"
-echo "Token:    $RESEARCHVAULT_PORTAL_TOKEN"
-echo "Link:     http://localhost:5173/?token=$RESEARCHVAULT_PORTAL_TOKEN"
+echo "Open the frontend and enter your token in the login screen."
 wait

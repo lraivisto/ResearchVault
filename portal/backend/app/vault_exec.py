@@ -33,8 +33,8 @@ def scrub_text(s: str) -> str:
 
 
 def _repo_root() -> Path:
-    # .../ResearchVault/portal/backend/app/vault_exec.py -> parents[4] == ResearchVault/
-    return Path(__file__).resolve().parents[4]
+    # .../ResearchVault/portal/backend/app/vault_exec.py -> parents[3] == ResearchVault/
+    return Path(__file__).resolve().parents[3]
 
 
 def run_vault(

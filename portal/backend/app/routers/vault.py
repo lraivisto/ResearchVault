@@ -82,7 +82,9 @@ def vault_status(req: StatusRequest):
         args += ["--filter-tag", req.filter_tag]
     if req.branch:
         args += ["--branch", req.branch]
-    args += ["--format", req.format]
+    # Ensure format is always passed
+    fmt = req.format if req.format else "json"
+    args += ["--format", fmt]
     return _run(args)
 
 

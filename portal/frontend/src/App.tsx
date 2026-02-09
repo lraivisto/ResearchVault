@@ -515,17 +515,26 @@ function ProjectDetail({
     return res;
   }
 
-  useEffect(() => {
-    if (tab === 'status') {
-      run('/vault/status', { id: projectId, format: 'json' }).then((res) => {
-        if (res.ok) {
-          try {
-            setStatusData(JSON.parse(res.stdout));
-          } catch (e) {
-            console.error('Failed to parse status JSON', e);
-          }
+  async function refreshStatus() {
+    try {
+      const res = await run('/vault/status', { id: projectId, format: 'json' });
+      if (res.ok && res.stdout) {
+        // Handle potential parsing errors gracefully
+        try {
+          const parsed = JSON.parse(res.stdout);
+          setStatusData(parsed);
+        } catch (err) {
+          console.warn('Backend returned non-JSON status, cannot update GUI.', err);
         }
-      });
+      }
+    } catch (e) {
+      console.error('Failed to refresh status', e);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'status' && projectId) {
+      refreshStatus();
     }
   }, [projectId, tab]);
 
@@ -579,12 +588,8 @@ function ProjectDetail({
             <div className="flex justify-between items-start flex-wrap gap-2">
                <div className="flex gap-2">
                  <button
-                    onClick={() => {
-                      run('/vault/status', { id: projectId, format: 'json' }).then(res => {
-                        if (res.ok) setStatusData(JSON.parse(res.stdout));
-                      });
-                    }}
-                    className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2"
+                    onClick={refreshStatus}
+                    className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2 shadow-sm active:scale-95 transition-all"
                   >
                     <RefreshCw className="w-4 h-4" /> Refresh
                   </button>

@@ -23,6 +23,7 @@ cleanup() {
     # 2. Wait for them to actually finish logging/exiting
     # This prevents the prompt from appearing while uvicorn is still printing "Shutting down..."
     wait 2>/dev/null || true
+    sleep 1.2
     
     # 3. Final safety net: kill process group (excluding self if possible, but trap - ensures no loop)
     trap - SIGINT SIGTERM EXIT

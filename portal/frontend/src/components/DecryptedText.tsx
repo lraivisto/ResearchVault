@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import { motion } from 'framer-motion';
 
 const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
 
@@ -10,7 +9,6 @@ interface DecryptedTextProps {
   className?: string;
   parentClassName?: string;
   animateOnHover?: boolean;
-  revealDirection?: "start" | "end" | "center";
   useOriginalCharsOnly?: boolean;
 }
 
@@ -21,24 +19,20 @@ export default function DecryptedText({
   className,
   parentClassName,
   animateOnHover = false,
-  revealDirection = "start",
   useOriginalCharsOnly = false,
 }: DecryptedTextProps) {
   const [displayText, setDisplayText] = useState(text);
   const [isScrambling, setIsScrambling] = useState(false);
   const iterations = useRef(0);
 
-  const revealRef = useRef<NodeJS.Timeout | null>(null);
+  const revealRef = useRef<any>(null);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-
     if (!animateOnHover) {
       startScramble();
     }
 
     return () => {
-      if (interval) clearInterval(interval);
       if (revealRef.current) clearInterval(revealRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

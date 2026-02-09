@@ -1,11 +1,36 @@
 
 #!/bin/bash
 
-# Fail fast; trap will still reap background processes.
+# Fail fast
 set -euo pipefail
 
-# Kill background processes on exit (best-effort; don't spam errors during shutdown).
-trap "trap - SIGTERM && kill -- -$$ 2>/dev/null || true" SIGINT SIGTERM EXIT
+# Global PIDs for cleanup
+BACKEND_PID=""
+FRONTEND_PID=""
+
+cleanup() {
+    echo ""
+    echo "🛑 Shutting down Portal..."
+    
+    # 1. Terminate specific jobs first (allows graceful shutdown logs)
+    if [ -n "$BACKEND_PID" ]; then
+        kill "$BACKEND_PID" 2>/dev/null || true
+    fi
+    if [ -n "$FRONTEND_PID" ]; then
+        kill "$FRONTEND_PID" 2>/dev/null || true
+    fi
+
+    # 2. Wait for them to actually finish logging/exiting
+    # This prevents the prompt from appearing while uvicorn is still printing "Shutting down..."
+    wait 2>/dev/null || true
+    
+    # 3. Final safety net: kill process group (excluding self if possible, but trap - ensures no loop)
+    trap - SIGINT SIGTERM EXIT
+    kill -- -$$ 2>/dev/null || true
+}
+
+# Trap signals
+trap cleanup SIGINT SIGTERM EXIT
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -96,6 +121,7 @@ PY
 echo "[4/4] Launching Frontend (Vite)..."
 pushd portal/frontend >/dev/null
 npm run dev -- --port 5173 &
+FRONTEND_PID=$!
 popd >/dev/null
 
 # Wait

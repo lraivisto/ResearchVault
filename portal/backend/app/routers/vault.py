@@ -26,7 +26,7 @@ def _run(args: list[str], *, timeout_s: int = 60):
 
 
 class InitRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=200)
+    id: Optional[str] = None
     objective: str = Field(min_length=1, max_length=5000)
     name: Optional[str] = Field(default=None, max_length=500)
     priority: int = Field(default=0, ge=0, le=100)
@@ -34,7 +34,12 @@ class InitRequest(BaseModel):
 
 @router.post("/init")
 def vault_init(req: InitRequest):
-    args = ["init", "--id", req.id, "--objective", req.objective, "--priority", str(req.priority)]
+    # Handle empty string from frontend
+    project_id = req.id if req.id and req.id.strip() else None
+    
+    args = ["init", "--objective", req.objective, "--priority", str(req.priority)]
+    if project_id:
+        args += ["--id", project_id]
     if req.name:
         args += ["--name", req.name]
     return _run(args)

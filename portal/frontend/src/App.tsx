@@ -12,6 +12,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Target,
   Terminal,
 } from 'lucide-react';
 
@@ -32,7 +33,7 @@ function DecryptedText({ text, speed = 50, className = '' }: { text: string, spe
       clearInterval(interval);
       interval = setInterval(() => {
         setDisplayText(() => 
-            text.split('').map((char, index) => {
+            text.split('').map((_, index) => {
                 if(index < iteration) return text[index];
                 return chars[Math.floor(Math.random() * chars.length)];
             }).join('')
@@ -246,12 +247,15 @@ function EntryScreen({
     setError(null);
     setLoading(true);
     try {
-      const res = await runVaultPost('/vault/init', {
-        id: newId,
+      const payload: any = {
         name: newName || null,
         objective: newObjective,
         priority: newPriority,
-      });
+      };
+      if (newId.trim()) {
+        payload.id = newId;
+      }
+      const res = await runVaultPost('/vault/init', payload);
       setLastResult(res);
 
       if (!res.ok) {
@@ -491,6 +495,11 @@ function ProjectDetail({
   const [ingestUrl, setIngestUrl] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
 
+  // Expand Mission State
+  const [showExpand, setShowExpand] = useState(false);
+  const [expandQuery, setExpandQuery] = useState('');
+  const [isExpanding, setIsExpanding] = useState(false);
+
   // Dev Mode inputs (low-level commands)
   const [watchType, setWatchType] = useState<'url' | 'query'>('url');
   const [watchTarget, setWatchTarget] = useState('');
@@ -586,6 +595,13 @@ function ProjectDetail({
                  >
                     <Globe className="w-4 h-4" /> Ingest from Web
                  </button>
+
+                 <button 
+                    onClick={() => setShowExpand(!showExpand)}
+                    className="border border-purple-300 bg-purple-50 text-purple-700 px-4 py-2 rounded hover:bg-purple-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(147,51,234,0.2)] transition-all"
+                 >
+                    <Target className="w-4 h-4" /> Expand Mission
+                 </button>
                </div>
             </div>
             
@@ -621,6 +637,47 @@ function ProjectDetail({
                     </div>
                     <div className="text-xs text-gray-500 mt-2">
                         Extracts text, summarizes, and tags content automatically.
+                    </div>
+                </div>
+            )}
+
+            {showExpand && (
+                <div className="bg-white border border-purple-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                    <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-purple-600" /> Track New Angle
+                    </h3>
+                    <div className="flex gap-2">
+                        <input 
+                            value={expandQuery}
+                            onChange={e => setExpandQuery(e.target.value)}
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500"
+                            placeholder="What should we watch? (e.g. 'competitor release notes')"
+                        />
+                        <button
+                            onClick={async () => {
+                                setIsExpanding(true);
+                                await run('/vault/watch/add', { 
+                                  id: projectId, 
+                                  type: 'query', 
+                                  target: expandQuery, 
+                                  interval: 3600 
+                                });
+                                setExpandQuery('');
+                                setIsExpanding(false);
+                                setShowExpand(false);
+                                // Refresh status to confirm
+                                run('/vault/status', { id: projectId, format: 'json' }).then(res => {
+                                    if (res.ok) setStatusData(JSON.parse(res.stdout));
+                                });
+                            }}
+                            disabled={!expandQuery || isExpanding}
+                            className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:opacity-50 font-semibold"
+                        >
+                            {isExpanding ? 'Adding...' : 'Start Tracking'}
+                        </button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                        The Vault will periodically search for this topic and alert you to new findings.
                     </div>
                 </div>
             )}

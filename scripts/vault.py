@@ -14,7 +14,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import scripts.db as db
 import scripts.core as core
 import scripts.scuttle as scuttle_engine
-import scripts.strategy as strategy_engine
 
 console = Console()
 
@@ -39,6 +38,7 @@ def main():
 
     # List
     list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Status Update
     update_parser = subparsers.add_parser("update")
@@ -139,15 +139,6 @@ def main():
     artifact_list.add_argument("--id", required=True)
     artifact_list.add_argument("--branch", default=None, help="Branch name (default: main)")
 
-    # Synthesis
-    synth_parser = subparsers.add_parser("synthesize", help="Discover links via local embeddings")
-    synth_parser.add_argument("--id", required=True)
-    synth_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
-    synth_parser.add_argument("--threshold", type=float, default=0.78)
-    synth_parser.add_argument("--top-k", type=int, default=5, help="Max links per entity")
-    synth_parser.add_argument("--max-links", type=int, default=50)
-    synth_parser.add_argument("--dry-run", action="store_true", help="Compute links but do not persist")
-
     # Verification protocol
     verify_parser = subparsers.add_parser("verify", help="Active verification protocol (missions)")
     verify_sub = verify_parser.add_subparsers(dest="verify_command")
@@ -174,31 +165,6 @@ def main():
     verify_complete.add_argument("--mission", required=True)
     verify_complete.add_argument("--status", default="done", choices=["done", "cancelled", "open"])
     verify_complete.add_argument("--note", default="")
-
-    # Autonomous Strategist
-    strat_parser = subparsers.add_parser("strategy", help="Analyze project state and recommend a Next Best Action")
-    strat_parser.add_argument("--id", required=True)
-    strat_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
-    strat_parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="Execute the recommended action (safe subset: verify/synthesize).",
-    )
-    strat_parser.add_argument("--format", choices=["rich", "json"], default="rich")
-
-    # MCP server
-    mcp_parser = subparsers.add_parser("mcp", help="Run ResearchVault as an MCP server")
-    mcp_parser.add_argument(
-        "--transport",
-        default="stdio",
-        choices=["stdio", "sse", "streamable-http"],
-        help="MCP transport (default: stdio)",
-    )
-    mcp_parser.add_argument(
-        "--mount-path",
-        default=None,
-        help="Mount path for SSE transport (optional)",
-    )
 
     # Watch targets + watchdog runner
     watch_parser = subparsers.add_parser("watch", help="Manage watchdog targets")
@@ -307,27 +273,42 @@ def main():
                 print(output)
     elif args.command == "list":
         projects = core.list_projects()
-        if not projects:
-            console.print("[yellow]No projects found.[/yellow]")
+        if args.format == "json":
+            # Stable, machine-readable output for the Portal UI.
+            rows = [
+                {
+                    "id": p[0],
+                    "name": p[1],
+                    "objective": p[2],
+                    "status": p[3],
+                    "created_at": p[4],
+                    "priority": p[5],
+                }
+                for p in projects
+            ]
+            print(json.dumps(rows, indent=2))
         else:
-            table = Table(title="Research Vault Projects", box=box.ROUNDED)
-            table.add_column("ID", style="cyan", no_wrap=True)
-            table.add_column("Prior", style="magenta", justify="center")
-            table.add_column("Status", style="bold")
-            table.add_column("Name", style="green")
-            table.add_column("Objective")
-            
-            for p in projects:
-                # p: id, name, objective, status, created_at, priority
-                status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
-                table.add_row(
-                    p[0], 
-                    str(p[5]), 
-                    f"[{status_style}]{p[3].upper()}[/{status_style}]", 
-                    p[1], 
-                    p[2]
-                )
-            console.print(table)
+            if not projects:
+                console.print("[yellow]No projects found.[/yellow]")
+            else:
+                table = Table(title="Research Vault Projects", box=box.ROUNDED)
+                table.add_column("ID", style="cyan", no_wrap=True)
+                table.add_column("Prior", style="magenta", justify="center")
+                table.add_column("Status", style="bold")
+                table.add_column("Name", style="green")
+                table.add_column("Objective")
+
+                for p in projects:
+                    # p: id, name, objective, status, created_at, priority
+                    status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
+                    table.add_row(
+                        p[0],
+                        str(p[5]),
+                        f"[{status_style}]{p[3].upper()}[/{status_style}]",
+                        p[1],
+                        p[2],
+                    )
+                console.print(table)
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
     elif args.command == "summary":
@@ -574,31 +555,6 @@ def main():
                 console.print(table)
         else:
             console.print("[red]Error:[/red] artifact requires a subcommand (add|list).")
-    elif args.command == "synthesize":
-        from scripts.synthesis import synthesize
-
-        links = synthesize(
-            args.id,
-            branch=args.branch,
-            threshold=args.threshold,
-            top_k=args.top_k,
-            max_links=args.max_links,
-            persist=not args.dry_run,
-        )
-        if not links:
-            console.print("[yellow]No links found above threshold.[/yellow]")
-        else:
-            table = Table(title="Synthesis Links", box=box.ROUNDED)
-            table.add_column("Score", justify="right", style="magenta")
-            table.add_column("Source", style="cyan")
-            table.add_column("Target", style="green")
-            for link in links:
-                table.add_row(
-                    f"{link['score']:.3f}",
-                    f"{link['source_label']} ({link['source_id']})",
-                    f"{link['target_label']} ({link['target_id']})",
-                )
-            console.print(table)
     elif args.command == "verify":
         if args.verify_command == "plan":
             missions = core.plan_verification_missions(
@@ -672,76 +628,6 @@ def main():
             console.print(f"[green]✔ Updated mission[/green] {args.mission} -> {args.status}")
         else:
             console.print("[red]Error:[/red] verify requires a subcommand (plan|list|run|complete).")
-    elif args.command == "strategy":
-        try:
-            result = strategy_engine.strategize(args.id, branch=args.branch, execute=args.execute)
-        except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
-            raise SystemExit(1)
-
-        if args.format == "json":
-            print(json.dumps(result, indent=2))
-            return
-
-        state = result.get("state", {})
-        rec = result.get("recommendation", {})
-        action = rec.get("action", "UNKNOWN")
-        title = rec.get("title", "")
-        rationale = rec.get("rationale", []) or []
-        suggested = rec.get("suggested_commands", []) or []
-
-        metrics = (state.get("metrics", {}) or {}).get("progress", {}) or {}
-        coverage = metrics.get("coverage_score", 0.0)
-        progress = metrics.get("progress_score", 0.0)
-
-        f = ((state.get("metrics", {}) or {}).get("findings", {}) or {})
-        v = ((state.get("metrics", {}) or {}).get("verification", {}) or {}).get("missions", {}) or {}
-
-        table = Table(title="Strategy Snapshot", box=box.ROUNDED)
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="green")
-        table.add_row("Findings", str(f.get("count", 0)))
-        table.add_row("Avg Confidence", f"{float(f.get('avg_confidence', 0.0)):.2f}")
-        table.add_row("Low Conf", str(f.get("low_confidence_count", 0)))
-        table.add_row("Unverified", str(f.get("unverified_count", 0)))
-        table.add_row("Missions Open", str(v.get("open", 0)))
-        table.add_row("Missions Blocked", str(v.get("blocked", 0)))
-        table.add_row("Coverage", f"{float(coverage):.2f}")
-        table.add_row("Progress", f"{float(progress):.2f}")
-
-        rationale_text = "\n".join([f"- {r}" for r in rationale]) if rationale else "(none)"
-        cmd_text = "\n".join([f"$ {c}" for c in suggested]) if suggested else "(none)"
-
-        console.print(table)
-        console.print(
-            Panel(
-                f"[bold yellow]{action}[/bold yellow]: {title}\n\n[bold]Rationale[/bold]\n{rationale_text}",
-                title="Next Best Action",
-                border_style="magenta",
-            )
-        )
-        console.print(Panel(cmd_text, title="Suggested Commands", border_style="blue"))
-
-        if "execution" in result:
-            ex = result.get("execution", {}) or {}
-            ok = ex.get("ok", False)
-            details = ex.get("details", {}) or {}
-            err = ex.get("error", "")
-            body = json.dumps(details, indent=2) if details else ""
-            if err:
-                body = (body + "\n\n" if body else "") + f"Error: {err}"
-            console.print(
-                Panel(
-                    f"ok={ok}\n\n{body}".strip(),
-                    title="Execution Result",
-                    border_style="green" if ok else "red",
-                )
-            )
-    elif args.command == "mcp":
-        # IMPORTANT: keep stdout clean for stdio transport.
-        from scripts.mcp_server import mcp as server
-
-        server.run(transport=args.transport, mount_path=args.mount_path)
     elif args.command == "watch":
         if args.watch_command == "add":
             tid = core.add_watch_target(

@@ -1,8 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { API_BASE } from './config';
+import { useEffect, useState, type ComponentType } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle,
+  FolderPlus,
+  FolderSearch,
+  GitBranch,
+  Lightbulb,
+  Play,
+  RefreshCw,
+  Search,
+  Terminal,
+} from 'lucide-react';
 
-const queryClient = new QueryClient();
+import { API_BASE } from './config';
 
 type VaultRunResult = {
   argv: string[];
@@ -13,157 +25,657 @@ type VaultRunResult = {
   ok: boolean;
 };
 
-type RunRecord = VaultRunResult & { at: string; endpoint: string };
+type Project = {
+  id: string;
+  name: string;
+  objective: string;
+  status: string;
+  created_at: string;
+  priority: number;
+};
 
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
+  const res = await fetch(`${API_BASE}${path}`,
+    {
+      ...init,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers || {}),
+      },
     },
-  });
+  );
 
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status}: ${text}`);
   }
+
   return res.json();
 }
 
-function Section({ title, children }: { title: string; children: any }) {
+async function runVaultGet(endpoint: string): Promise<VaultRunResult> {
+  return apiJson<VaultRunResult>(endpoint, { method: 'GET' });
+}
+
+async function runVaultPost(endpoint: string, payload?: unknown): Promise<VaultRunResult> {
+  return apiJson<VaultRunResult>(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+function CommandOutput({ result }: { result: VaultRunResult | null }) {
+  if (!result) {
+    return <div className="text-gray-400 italic text-sm p-4">No commands executed yet.</div>;
+  }
+
+  const cmd = result.argv.length >= 3 ? result.argv.slice(2).join(' ') : result.argv.join(' ');
+
   return (
-    <section className="border border-gray-300 bg-white">
-      <div className="border-b border-gray-200 px-4 py-2 font-bold">{title}</div>
-      <div className="p-4">{children}</div>
-    </section>
+    <div className="bg-gray-900 text-gray-100 p-4 rounded-md font-mono text-xs overflow-auto max-h-72 border border-gray-800 shadow-inner">
+      <div className="flex gap-2 mb-2 border-b border-gray-800 pb-2">
+        <span className="text-green-400">$ {cmd}</span>
+        <span className={result.exit_code === 0 ? 'text-gray-500' : 'text-red-400'}>(exit {result.exit_code}{result.truncated ? ', truncated' : ''})</span>
+      </div>
+      {result.stderr && (
+        <pre className="text-red-300 whitespace-pre-wrap mb-2">{result.stderr}</pre>
+      )}
+      <pre className="text-gray-200 whitespace-pre-wrap">{result.stdout}</pre>
+    </div>
   );
 }
 
-function AppContent() {
+function EntryScreen({
+  onSelectProject,
+  setLastResult,
+}: {
+  onSelectProject: (id: string) => void;
+  setLastResult: (r: VaultRunResult) => void;
+}) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showNew, setShowNew] = useState(false);
+  const [newId, setNewId] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newObjective, setNewObjective] = useState('');
+  const [newPriority, setNewPriority] = useState(0);
+
+  const [searchQuery, setSearchQuery] = useState('');
+
+  async function handleListProjects(showInConsole: boolean) {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await runVaultGet('/vault/list');
+      if (showInConsole) setLastResult(res);
+
+      if (!res.ok) {
+        throw new Error(res.stderr || 'vault list failed');
+      }
+
+      const parsed = JSON.parse(res.stdout) as Project[];
+      setProjects(parsed);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleInit() {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await runVaultPost('/vault/init', {
+        id: newId,
+        name: newName || null,
+        objective: newObjective,
+        priority: newPriority,
+      });
+      setLastResult(res);
+
+      if (!res.ok) {
+        throw new Error(res.stderr || 'vault init failed');
+      }
+
+      // Keep "one click = one CLI command": update UI optimistically (no extra list command).
+      const nowIso = new Date().toISOString();
+      setProjects((prev) => {
+        const next: Project[] = [
+          {
+            id: newId,
+            name: newName || newId,
+            objective: newObjective,
+            status: 'active',
+            created_at: nowIso,
+            priority: newPriority,
+          },
+          ...prev.filter((p) => p.id !== newId),
+        ];
+        return next;
+      });
+
+      setShowNew(false);
+      setNewId('');
+      setNewName('');
+      setNewObjective('');
+      setNewPriority(0);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSearch() {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await runVaultPost('/vault/search', { query: searchQuery });
+      setLastResult(res);
+      if (!res.ok) throw new Error(res.stderr || 'vault search failed');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // Load once to populate the table, but do not spam the console.
+    handleListProjects(false).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={() => handleListProjects(true)}
+          className="flex items-center justify-center gap-2 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition"
+        >
+          <RefreshCw className="w-5 h-5 text-blue-600" />
+          <span className="font-semibold text-gray-800">LIST</span>
+        </button>
+
+        <button
+          onClick={() => setShowNew((v) => !v)}
+          className="flex items-center justify-center gap-2 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition"
+        >
+          <FolderPlus className="w-5 h-5 text-green-600" />
+          <span className="font-semibold text-gray-800">NEW PROJECT</span>
+        </button>
+
+        <div className="flex p-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          <input
+            className="flex-1 p-4 outline-none"
+            placeholder="SEARCH (vault search)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSearch();
+            }}
+          />
+          <button
+            onClick={handleSearch}
+            className="px-4 hover:bg-gray-50"
+            disabled={!searchQuery.trim() || loading}
+            aria-label="Search"
+          >
+            <Search className="w-5 h-5 text-purple-600" />
+          </button>
+        </div>
+      </div>
+
+      {showNew && (
+        <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <FolderSearch className="w-4 h-4 text-gray-600" />
+            <div className="font-bold text-gray-700">Initialize New Project</div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <input
+              className="w-full p-2 border border-gray-300 rounded"
+              placeholder="Project ID (required)"
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+            />
+            <input
+              className="w-full p-2 border border-gray-300 rounded"
+              placeholder="Name (optional)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <textarea
+              className="w-full p-2 border border-gray-300 rounded h-24"
+              placeholder="Objective (required)"
+              value={newObjective}
+              onChange={(e) => setNewObjective(e.target.value)}
+            />
+            <input
+              className="w-full p-2 border border-gray-300 rounded"
+              type="number"
+              value={newPriority}
+              onChange={(e) => setNewPriority(parseInt(e.target.value || '0', 10))}
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNew(false)}
+                className="px-3 py-1 text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleInit}
+                disabled={!newId.trim() || !newObjective.trim() || loading}
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                Initialize
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="border border-red-200 bg-red-50 text-red-800 text-sm p-3 rounded">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+          <div className="font-semibold text-gray-800">Projects</div>
+          <div className="text-xs text-gray-500">
+            {loading ? 'Loading…' : `${projects.length} total`}
+          </div>
+        </div>
+
+        <table className="w-full text-left">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="p-3 font-semibold text-gray-600 text-sm">ID</th>
+              <th className="p-3 font-semibold text-gray-600 text-sm">Objective</th>
+              <th className="p-3 font-semibold text-gray-600 text-sm">Status</th>
+              <th className="p-3 font-semibold text-gray-600 text-sm">Pri</th>
+              <th className="p-3 font-semibold text-gray-600 text-sm">Created</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {projects.map((p) => (
+              <tr
+                key={p.id}
+                onClick={() => onSelectProject(p.id)}
+                className="hover:bg-blue-50 cursor-pointer transition"
+              >
+                <td className="p-3 font-mono text-sm text-blue-700 font-semibold">{p.id}</td>
+                <td className="p-3 text-sm text-gray-700 truncate max-w-xs">{p.objective}</td>
+                <td className="p-3 text-sm">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      p.status === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : p.status === 'completed'
+                          ? 'bg-blue-100 text-blue-800'
+                          : p.status === 'failed'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {p.status}
+                  </span>
+                </td>
+                <td className="p-3 text-sm text-gray-500">{p.priority}</td>
+                <td className="p-3 text-sm text-gray-400">
+                  {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}
+                </td>
+              </tr>
+            ))}
+
+            {!loading && projects.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-gray-500">
+                  No projects loaded. Click LIST.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ProjectDetail({
+  projectId,
+  onBack,
+  setLastResult,
+  devMode,
+}: {
+  projectId: string;
+  onBack: () => void;
+  setLastResult: (r: VaultRunResult) => void;
+  devMode: boolean;
+}) {
+  const [tab, setTab] = useState<'status' | 'insights' | 'verification' | 'branches'>('status');
+
+  // Dev Mode inputs (low-level commands)
+  const [watchType, setWatchType] = useState<'url' | 'query'>('url');
+  const [watchTarget, setWatchTarget] = useState('');
+  const watchInterval = 3600;
+  const watchTags = '';
+
+  const [cacheQuery, setCacheQuery] = useState('');
+  const [cacheSetJson, setCacheSetJson] = useState('{}');
+
+  async function run(endpoint: string, payload?: unknown) {
+    const res = await runVaultPost(endpoint, payload);
+    setLastResult(res);
+  }
+
+  function TabButton({
+    id,
+    label,
+    icon: Icon,
+  }: {
+    id: 'status' | 'insights' | 'verification' | 'branches';
+    label: string;
+    icon: ComponentType<{ className?: string }>;
+  }) {
+    const active = tab === id;
+    return (
+      <button
+        onClick={() => setTab(id)}
+        className={`flex items-center gap-2 px-4 py-2 border-b-2 transition whitespace-nowrap ${
+          active ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        <Icon className="w-4 h-4" />
+        <span className="font-medium">{label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={onBack} className="p-2 hover:bg-gray-200 rounded-full" aria-label="Back">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <div className="text-xs text-gray-500">Project</div>
+          <h1 className="text-2xl font-bold text-gray-800 font-mono">{projectId}</h1>
+        </div>
+      </div>
+
+      <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
+        <TabButton id="status" label="Status" icon={Activity} />
+        <TabButton id="insights" label="Insights" icon={Lightbulb} />
+        <TabButton id="verification" label="Verification" icon={CheckCircle} />
+        <TabButton id="branches" label="Branches" icon={GitBranch} />
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {tab === 'status' && (
+          <div className="space-y-4">
+            <button
+              onClick={() => run('/vault/status', { id: projectId })}
+              className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
+            >
+              Run: vault status
+            </button>
+
+            {devMode && (
+              <div className="border border-yellow-300 bg-yellow-50 p-4 rounded space-y-4">
+                <div className="font-bold text-yellow-900 text-sm flex items-center gap-2">
+                  <Terminal className="w-4 h-4" />
+                  Advanced / Dev Mode Actions
+                </div>
+
+                {/* Log */}
+                <div className="border-t border-yellow-200 pt-2">
+                  <div className="text-[10px] font-bold text-yellow-700 uppercase mb-2">Manual Event Log</div>
+                  <button
+                    onClick={() => run('/vault/log', { id: projectId, type: 'NOTE', step: 0, payload: {}, conf: 1.0, source: 'portal', tags: 'dev' })}
+                    className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
+                  >
+                    Run: vault log --type NOTE --tags dev
+                  </button>
+                </div>
+
+                {/* Watch */}
+                <div className="border-t border-yellow-200 pt-2 space-y-2">
+                  <div className="text-[10px] font-bold text-yellow-700 uppercase">Watchdog Management</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={watchType}
+                      onChange={(e) => setWatchType(e.target.value as any)}
+                      className="p-2 border border-yellow-300 rounded text-xs bg-white"
+                    >
+                      <option value="url">URL</option>
+                      <option value="query">Query</option>
+                    </select>
+                    <input
+                      placeholder="Target (URL/Query)"
+                      value={watchTarget}
+                      onChange={(e) => setWatchTarget(e.target.value)}
+                      className="p-2 border border-yellow-300 rounded text-xs bg-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => run('/vault/watch/add', { id: projectId, type: watchType, target: watchTarget, interval: watchInterval, tags: watchTags })}
+                      disabled={!watchTarget.trim()}
+                      className="w-full bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700 text-sm disabled:opacity-50"
+                    >
+                      Run: vault watch add
+                    </button>
+                    <button
+                      onClick={() => run('/vault/watch/list', { id: projectId })}
+                      className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm"
+                    >
+                      Run: vault watch list
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cache / Search set-result */}
+                <div className="border-t border-yellow-200 pt-2 space-y-2">
+                  <div className="text-[10px] font-bold text-yellow-700 uppercase">Cache Injection</div>
+                  <input
+                    placeholder="Query"
+                    value={cacheQuery}
+                    onChange={(e) => setCacheQuery(e.target.value)}
+                    className="w-full p-2 border border-yellow-300 rounded text-xs bg-white"
+                  />
+                  <textarea
+                    placeholder="Result JSON"
+                    value={cacheSetJson}
+                    onChange={(e) => setCacheSetJson(e.target.value)}
+                    className="w-full p-2 border border-yellow-300 rounded text-xs font-mono h-20 bg-white"
+                  />
+                  <button
+                    onClick={() => {
+                      try {
+                        const parsed = JSON.parse(cacheSetJson);
+                        run('/vault/search', { query: cacheQuery, set_result: JSON.stringify(parsed) });
+                      } catch (e) {
+                        alert('Invalid JSON in result');
+                      }
+                    }}
+                    disabled={!cacheQuery.trim()}
+                    className="w-full bg-yellow-600 text-white px-3 py-2 rounded hover:bg-yellow-700 text-sm disabled:opacity-50"
+                  >
+                    Run: vault search --set-result
+                  </button>
+                </div>
+
+                {/* Watchdog Once */}
+                <div className="border-t border-yellow-200 pt-2">
+                  <button
+                    onClick={() => run('/vault/watchdog/once', { id: projectId, limit: 5, dry_run: true })}
+                    className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
+                  >
+                    Run: vault watchdog --once --dry-run
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'insights' && (
+          <InsightsPanel projectId={projectId} run={run} />
+        )}
+
+        {tab === 'verification' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <button
+                onClick={() => run('/vault/verify/plan', { id: projectId })}
+                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4" /> plan
+              </button>
+              <button
+                onClick={() => run('/vault/verify/list', { id: projectId, limit: 50 })}
+                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm"
+              >
+                list
+              </button>
+              <button
+                onClick={() => run('/vault/verify/run', { id: projectId, status: 'open', limit: 5 })}
+                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm"
+              >
+                run
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'branches' && (
+          <BranchesPanel projectId={projectId} run={run} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InsightsPanel({
+  projectId,
+  run,
+}: {
+  projectId: string;
+  run: (endpoint: string, payload?: unknown) => Promise<void>;
+}) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-200 p-4 rounded shadow-sm">
+        <div className="font-bold text-gray-800 mb-3">Add Insight</div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full p-2 border border-gray-300 rounded text-sm mb-2"
+          placeholder="Title"
+        />
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          className="w-full p-2 border border-gray-300 rounded text-sm h-24 mb-3"
+          placeholder="Content"
+        />
+        <div className="flex justify-end">
+          <button
+            disabled={!title.trim() || !content.trim()}
+            onClick={async () => {
+              await run('/vault/insight/add', { id: projectId, title, content, tags: '' });
+              setTitle('');
+              setContent('');
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      <button
+        onClick={() => run('/vault/insight/list', { id: projectId })}
+        className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
+      >
+        Run: vault insight (list)
+      </button>
+    </div>
+  );
+}
+
+function BranchesPanel({
+  projectId,
+  run,
+}: {
+  projectId: string;
+  run: (endpoint: string, payload?: unknown) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-200 p-4 rounded shadow-sm">
+        <div className="font-bold text-gray-800 mb-3">Create Branch</div>
+        <div className="flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1 p-2 border border-gray-300 rounded text-sm"
+            placeholder="Branch name"
+          />
+          <button
+            disabled={!name.trim()}
+            onClick={async () => {
+              await run('/vault/branch/create', { id: projectId, name });
+              setName('');
+            }}
+            className="bg-gray-900 text-white px-4 py-2 rounded hover:bg-gray-800 disabled:opacity-50 text-sm"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+
+      <button
+        onClick={() => run('/vault/branch/list', { id: projectId })}
+        className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
+      >
+        Run: vault branch list
+      </button>
+    </div>
+  );
+}
+
+function MainApp() {
   const [authed, setAuthed] = useState(false);
   const [token, setToken] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const [history, setHistory] = useState<RunRecord[]>([]);
+  const [devMode, setDevMode] = useState(false);
 
-  const last = useMemo(() => history[0], [history]);
-
-  // ---- command form state (boring, explicit, literal) ----
-  const [projectId, setProjectId] = useState('');
-
-  // init
-  const [initName, setInitName] = useState('');
-  const [initObjective, setInitObjective] = useState('');
-  const [initPriority, setInitPriority] = useState(0);
-
-  // update
-  const [updateStatus, setUpdateStatus] = useState('');
-  const [updatePriority, setUpdatePriority] = useState<string>('');
-
-  // search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchSetResultJson, setSearchSetResultJson] = useState('');
-
-  // scuttle
-  const [scuttleUrl, setScuttleUrl] = useState('');
-  const [scuttleTags, setScuttleTags] = useState('');
-  const [scuttleBranch, setScuttleBranch] = useState('');
-
-  // log
-  const [logType, setLogType] = useState('NOTE');
-  const [logStep, setLogStep] = useState(0);
-  const [logPayloadJson, setLogPayloadJson] = useState('{}');
-  const [logConf, setLogConf] = useState(1.0);
-  const [logSource, setLogSource] = useState('portal');
-  const [logTags, setLogTags] = useState('');
-  const [logBranch, setLogBranch] = useState('');
-
-  // status
-  const [statusFilterTag, setStatusFilterTag] = useState('');
-  const [statusBranch, setStatusBranch] = useState('');
-
-  // insight
-  const [insTitle, setInsTitle] = useState('');
-  const [insContent, setInsContent] = useState('');
-  const [insUrl, setInsUrl] = useState('');
-  const [insTags, setInsTags] = useState('');
-  const [insConf, setInsConf] = useState(1.0);
-  const [insBranch, setInsBranch] = useState('');
-  const [insFilterTag, setInsFilterTag] = useState('');
-
-  // export
-  const [exportFormat, setExportFormat] = useState<'json' | 'markdown'>('json');
-  const [exportBranch, setExportBranch] = useState('');
-
-  // verify
-  const [verifyThreshold, setVerifyThreshold] = useState(0.7);
-  const [verifyMax, setVerifyMax] = useState(20);
-  const [verifyBranch, setVerifyBranch] = useState('');
-  const [verifyListStatus, setVerifyListStatus] = useState('');
-  const [verifyListLimit, setVerifyListLimit] = useState(50);
-  const [verifyRunStatus, setVerifyRunStatus] = useState<'open' | 'blocked'>('open');
-  const [verifyRunLimit, setVerifyRunLimit] = useState(5);
-  const [verifyCompleteMission, setVerifyCompleteMission] = useState('');
-  const [verifyCompleteStatus, setVerifyCompleteStatus] = useState<'done' | 'cancelled' | 'open'>('done');
-  const [verifyCompleteNote, setVerifyCompleteNote] = useState('');
-
-  // synthesize
-  const [synThreshold, setSynThreshold] = useState(0.78);
-  const [synTopK, setSynTopK] = useState(5);
-  const [synMaxLinks, setSynMaxLinks] = useState(50);
-  const [synDryRun, setSynDryRun] = useState(false);
-  const [synBranch, setSynBranch] = useState('');
-
-  // strategy
-  const [stratBranch, setStratBranch] = useState('');
-  const [stratExecute, setStratExecute] = useState(false);
-  const [stratFormat, setStratFormat] = useState<'rich' | 'json'>('rich');
-
-  // watch
-  const [watchType, setWatchType] = useState<'url' | 'query'>('url');
-  const [watchTarget, setWatchTarget] = useState('');
-  const [watchInterval, setWatchInterval] = useState(3600);
-  const [watchTags, setWatchTags] = useState('');
-  const [watchBranch, setWatchBranch] = useState('');
-  const [watchListStatus, setWatchListStatus] = useState<'active' | 'disabled' | 'all'>('active');
-  const [watchDisableId, setWatchDisableId] = useState('');
-
-  // watchdog
-  const [wdLimit, setWdLimit] = useState(10);
-  const [wdDryRun, setWdDryRun] = useState(false);
-  const [wdBranch, setWdBranch] = useState('');
-
-  // branches/hypotheses/artifacts
-  const [branchName, setBranchName] = useState('');
-  const [branchFrom, setBranchFrom] = useState('');
-  const [branchHypothesis, setBranchHypothesis] = useState('');
-
-  const [hypBranch, setHypBranch] = useState('main');
-  const [hypStatement, setHypStatement] = useState('');
-  const [hypRationale, setHypRationale] = useState('');
-  const [hypConf, setHypConf] = useState(0.5);
-  const [hypStatus, setHypStatus] = useState<'open' | 'accepted' | 'rejected' | 'archived'>('open');
-  const [hypListBranch, setHypListBranch] = useState('');
-
-  const [artPath, setArtPath] = useState('');
-  const [artType, setArtType] = useState('FILE');
-  const [artMetadataJson, setArtMetadataJson] = useState('{}');
-  const [artBranch, setArtBranch] = useState('');
-  const [artListBranch, setArtListBranch] = useState('');
-
-  async function run(endpoint: string, payload?: any, method: 'GET' | 'POST' = 'POST') {
-    const at = new Date().toISOString();
-    const res: VaultRunResult = method === 'GET'
-      ? await apiJson(endpoint, { method: 'GET' })
-      : await apiJson(endpoint, { method: 'POST', body: JSON.stringify(payload || {}) });
-
-    setHistory((prev) => [{ ...res, at, endpoint }, ...prev].slice(0, 50));
-  }
+  const [currentProject, setCurrentProject] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<VaultRunResult | null>(null);
 
   useEffect(() => {
-    // Attempt cookie-based auth on load.
     apiJson('/auth/status', { method: 'GET' })
       .then(() => setAuthed(true))
       .catch(() => setAuthed(false));
@@ -173,11 +685,12 @@ function AppContent() {
     setAuthError(null);
     try {
       await apiJson('/auth/login', { method: 'POST', body: JSON.stringify({ token }) });
-      setToken(''); // do not keep secrets around
+      setToken('');
       setAuthed(true);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setAuthError(msg);
       setAuthed(false);
-      setAuthError(e?.message || 'Login failed');
     }
   }
 
@@ -186,446 +699,102 @@ function AppContent() {
       await apiJson('/auth/logout', { method: 'POST', body: '{}' });
     } finally {
       setAuthed(false);
-      setHistory([]);
+      setCurrentProject(null);
+      setLastResult(null);
     }
   }
 
   if (!authed) {
     return (
-      <div className="min-h-screen bg-gray-100 text-gray-900 font-mono p-6">
-        <div className="max-w-lg mx-auto border border-gray-300 bg-white">
-          <div className="border-b border-gray-200 px-4 py-2 font-bold">ResearchVault Portal — Login</div>
-          <div className="p-4 space-y-3">
-            <div className="text-sm text-gray-700">
-              Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code>. The token is never placed in URLs.
-            </div>
-            <input
-              className="w-full border border-gray-300 p-2"
-              type="password"
-              placeholder="Portal token"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
-            <button className="border border-gray-400 bg-gray-200 px-4 py-2" onClick={handleLogin}>
-              Login
-            </button>
-            {authError && <div className="text-sm text-red-700">{authError}</div>}
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4 font-mono">
+        <div className="bg-white p-8 rounded shadow border max-w-sm w-full space-y-4">
+          <h1 className="text-xl font-bold">ResearchVault Portal — Login</h1>
+          <div className="text-sm text-gray-600">
+            Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code>. The token is never placed in URLs.
           </div>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            className="w-full border p-2 rounded"
+            placeholder="Token"
+          />
+          <button
+            onClick={handleLogin}
+            disabled={!token.trim()}
+            className="w-full bg-black text-white p-2 rounded disabled:opacity-50"
+          >
+            Login
+          </button>
+          {authError && <div className="text-sm text-red-700">{authError}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-mono p-6">
-      <header className="mb-4 flex items-end justify-between">
-        <div>
-          <div className="text-2xl font-bold">ResearchVault Portal</div>
-          <div className="text-sm text-gray-600">A visual shell over <code>scripts.vault</code>. Every button runs exactly one CLI command.</div>
+    <div className={`min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col ${devMode ? 'border-4 border-yellow-400' : ''}`}>
+      {devMode && (
+        <div className="bg-yellow-400 text-yellow-900 px-4 py-1 text-center text-xs font-bold uppercase tracking-wider">
+          <AlertTriangle className="inline w-3 h-3 mr-1" /> Advanced / Developer Mode Active
         </div>
-        <button className="border border-gray-400 bg-gray-200 px-3 py-1" onClick={handleLogout}>
-          Logout
-        </button>
+      )}
+
+      <header className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <Terminal className="w-6 h-6 text-gray-700" />
+          <div>
+            <div className="font-bold text-lg tracking-tight">Portal Command Center</div>
+            <div className="text-xs text-gray-500">
+              A visual shell over <code>scripts.vault</code>. Every button runs exactly one CLI command.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setDevMode((v) => !v)}
+            className={`text-xs px-2 py-1 rounded border ${
+              devMode
+                ? 'bg-yellow-100 border-yellow-400 text-yellow-800'
+                : 'bg-gray-100 border-gray-300 text-gray-600'
+            }`}
+          >
+            {devMode ? 'Dev Mode ON' : 'Dev Mode OFF'}
+          </button>
+          <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-red-600">
+            Logout
+          </button>
+        </div>
       </header>
 
-      <div className="mb-4 border border-gray-300 bg-white p-4 flex gap-4 items-end">
-        <div className="flex-1">
-          <label className="block text-xs font-bold text-gray-700 mb-1">Project ID</label>
-          <input className="w-full border border-gray-300 p-2" value={projectId} onChange={(e) => setProjectId(e.target.value)} placeholder="e.g. metal-v1" />
-        </div>
-        <button className="border border-gray-400 bg-gray-200 px-3 py-2" onClick={() => run('/vault/list', undefined, 'GET')}>vault list</button>
-        <button className="border border-gray-400 bg-gray-200 px-3 py-2" onClick={() => run('/vault/status', { id: projectId })} disabled={!projectId}>vault status</button>
-        <button className="border border-gray-400 bg-gray-200 px-3 py-2" onClick={() => run('/vault/summary', { id: projectId })} disabled={!projectId}>vault summary</button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="init (create project)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="name (optional)" value={initName} onChange={(e) => setInitName(e.target.value)} />
-            <textarea className="border border-gray-300 p-2" placeholder="objective" value={initObjective} onChange={(e) => setInitObjective(e.target.value)} />
-            <input className="border border-gray-300 p-2" type="number" placeholder="priority" value={initPriority} onChange={(e) => setInitPriority(parseInt(e.target.value || '0', 10))} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !initObjective} onClick={() => run('/vault/init', { id: projectId, name: initName || null, objective: initObjective, priority: initPriority })}>
-              Run: vault init
-            </button>
-          </div>
-        </Section>
-
-        <Section title="update (status / priority)">
-          <div className="grid grid-cols-1 gap-2">
-            <select className="border border-gray-300 p-2" value={updateStatus} onChange={(e) => setUpdateStatus(e.target.value)}>
-              <option value="">(no status change)</option>
-              <option value="active">active</option>
-              <option value="paused">paused</option>
-              <option value="completed">completed</option>
-              <option value="failed">failed</option>
-            </select>
-            <input className="border border-gray-300 p-2" placeholder="priority (optional)" value={updatePriority} onChange={(e) => setUpdatePriority(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || (!updateStatus && updatePriority === '')} onClick={() => run('/vault/update', { id: projectId, status: updateStatus || null, priority: updatePriority === '' ? null : parseInt(updatePriority, 10) })}>
-              Run: vault update
-            </button>
-          </div>
-        </Section>
-
-        <Section title="search (cache + Brave API)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="query" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <textarea className="border border-gray-300 p-2 h-24" placeholder="optional: set-result JSON (manual injection)" value={searchSetResultJson} onChange={(e) => setSearchSetResultJson(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!searchQuery} onClick={() => {
-              let set_result = null;
-              try {
-                if (searchSetResultJson.trim()) {
-                  set_result = JSON.parse(searchSetResultJson);
-                }
-                run('/vault/search', { query: searchQuery, set_result });
-              } catch (e) {
-                alert('Invalid JSON in set-result');
-              }
-            }}>
-              Run: vault search
-            </button>
-          </div>
-        </Section>
-
-        <Section title="scuttle (ingest)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="url" value={scuttleUrl} onChange={(e) => setScuttleUrl(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="tags (comma-separated)" value={scuttleTags} onChange={(e) => setScuttleTags(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={scuttleBranch} onChange={(e) => setScuttleBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !scuttleUrl} onClick={() => run('/vault/scuttle', { id: projectId, url: scuttleUrl, tags: scuttleTags, branch: scuttleBranch || null })}>
-              Run: vault scuttle
-            </button>
-          </div>
-        </Section>
-
-        <Section title="log (event)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="type" value={logType} onChange={(e) => setLogType(e.target.value)} />
-            <input className="border border-gray-300 p-2" type="number" placeholder="step" value={logStep} onChange={(e) => setLogStep(parseInt(e.target.value || '0', 10))} />
-            <textarea className="border border-gray-300 p-2 h-24" placeholder="payload JSON" value={logPayloadJson} onChange={(e) => setLogPayloadJson(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" type="number" step="0.01" min="0" max="1" placeholder="conf" value={logConf} onChange={(e) => setLogConf(parseFloat(e.target.value || '1'))} />
-              <input className="border border-gray-300 p-2" placeholder="source" value={logSource} onChange={(e) => setLogSource(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" placeholder="tags" value={logTags} onChange={(e) => setLogTags(e.target.value)} />
-              <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={logBranch} onChange={(e) => setLogBranch(e.target.value)} />
-            </div>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => {
-              try {
-                run('/vault/log', {
-                  id: projectId,
-                  type: logType,
-                  step: logStep,
-                  payload: JSON.parse(logPayloadJson || '{}'),
-                  conf: logConf,
-                  source: logSource,
-                  tags: logTags,
-                  branch: logBranch || null,
-                });
-              } catch (e) {
-                alert('Invalid JSON in payload');
-              }
-            }}>
-              Run: vault log
-            </button>
-          </div>
-        </Section>
-
-        <Section title="status (detailed)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="filter-tag (optional)" value={statusFilterTag} onChange={(e) => setStatusFilterTag(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={statusBranch} onChange={(e) => setStatusBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/status', { id: projectId, filter_tag: statusFilterTag || null, branch: statusBranch || null })}>
-              Run: vault status
-            </button>
-          </div>
-        </Section>
-
-        <Section title="insight">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">Add</div>
-            <input className="border border-gray-300 p-2" placeholder="title" value={insTitle} onChange={(e) => setInsTitle(e.target.value)} />
-            <textarea className="border border-gray-300 p-2 h-20" placeholder="content" value={insContent} onChange={(e) => setInsContent(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="url" value={insUrl} onChange={(e) => setInsUrl(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" placeholder="tags" value={insTags} onChange={(e) => setInsTags(e.target.value)} />
-              <input className="border border-gray-300 p-2" type="number" step="0.01" min="0" max="1" placeholder="conf" value={insConf} onChange={(e) => setInsConf(parseFloat(e.target.value || '1'))} />
-            </div>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={insBranch} onChange={(e) => setInsBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !insTitle || !insContent} onClick={() => run('/vault/insight/add', { id: projectId, title: insTitle, content: insContent, url: insUrl, tags: insTags, conf: insConf, branch: insBranch || null })}>
-              Run: vault insight --add
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">List</div>
-            <input className="border border-gray-300 p-2" placeholder="filter-tag (optional)" value={insFilterTag} onChange={(e) => setInsFilterTag(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/insight/list', { id: projectId, filter_tag: insFilterTag || null, branch: insBranch || null })}>
-              Run: vault insight (list)
-            </button>
-          </div>
-        </Section>
-
-        <Section title="export">
-          <div className="grid grid-cols-1 gap-2">
-            <select className="border border-gray-300 p-2" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as any)}>
-              <option value="json">json</option>
-              <option value="markdown">markdown</option>
-            </select>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={exportBranch} onChange={(e) => setExportBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/export', { id: projectId, format: exportFormat, branch: exportBranch || null })}>
-              Run: vault export
-            </button>
-          </div>
-        </Section>
-
-        <Section title="verify (missions)">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">plan</div>
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" type="number" step="0.01" min="0" max="1" value={verifyThreshold} onChange={(e) => setVerifyThreshold(parseFloat(e.target.value || '0.7'))} />
-              <input className="border border-gray-300 p-2" type="number" value={verifyMax} onChange={(e) => setVerifyMax(parseInt(e.target.value || '20', 10))} />
-            </div>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={verifyBranch} onChange={(e) => setVerifyBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/verify/plan', { id: projectId, threshold: verifyThreshold, max: verifyMax, branch: verifyBranch || null })}>
-              Run: vault verify plan
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">list</div>
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" placeholder="status (optional)" value={verifyListStatus} onChange={(e) => setVerifyListStatus(e.target.value)} />
-              <input className="border border-gray-300 p-2" type="number" value={verifyListLimit} onChange={(e) => setVerifyListLimit(parseInt(e.target.value || '50', 10))} />
-            </div>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/verify/list', { id: projectId, status: verifyListStatus || null, limit: verifyListLimit, branch: verifyBranch || null })}>
-              Run: vault verify list
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">run</div>
-            <div className="grid grid-cols-2 gap-2">
-              <select className="border border-gray-300 p-2" value={verifyRunStatus} onChange={(e) => setVerifyRunStatus(e.target.value as any)}>
-                <option value="open">open</option>
-                <option value="blocked">blocked</option>
-              </select>
-              <input className="border border-gray-300 p-2" type="number" value={verifyRunLimit} onChange={(e) => setVerifyRunLimit(parseInt(e.target.value || '5', 10))} />
-            </div>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/verify/run', { id: projectId, status: verifyRunStatus, limit: verifyRunLimit, branch: verifyBranch || null })}>
-              Run: vault verify run
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">complete (manual)</div>
-            <input className="border border-gray-300 p-2" placeholder="mission id" value={verifyCompleteMission} onChange={(e) => setVerifyCompleteMission(e.target.value)} />
-            <select className="border border-gray-300 p-2" value={verifyCompleteStatus} onChange={(e) => setVerifyCompleteStatus(e.target.value as any)}>
-              <option value="done">done</option>
-              <option value="cancelled">cancelled</option>
-              <option value="open">open</option>
-            </select>
-            <input className="border border-gray-300 p-2" placeholder="note" value={verifyCompleteNote} onChange={(e) => setVerifyCompleteNote(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!verifyCompleteMission} onClick={() => run('/vault/verify/complete', { mission: verifyCompleteMission, status: verifyCompleteStatus, note: verifyCompleteNote })}>
-              Run: vault verify complete
-            </button>
-          </div>
-        </Section>
-
-        <Section title="synthesize">
-          <div className="grid grid-cols-1 gap-2">
-            <div className="grid grid-cols-3 gap-2">
-              <input className="border border-gray-300 p-2" type="number" step="0.01" value={synThreshold} onChange={(e) => setSynThreshold(parseFloat(e.target.value || '0.78'))} />
-              <input className="border border-gray-300 p-2" type="number" value={synTopK} onChange={(e) => setSynTopK(parseInt(e.target.value || '5', 10))} />
-              <input className="border border-gray-300 p-2" type="number" value={synMaxLinks} onChange={(e) => setSynMaxLinks(parseInt(e.target.value || '50', 10))} />
-            </div>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={synBranch} onChange={(e) => setSynBranch(e.target.value)} />
-            <label className="text-sm"><input type="checkbox" checked={synDryRun} onChange={(e) => setSynDryRun(e.target.checked)} /> dry-run</label>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/synthesize', { id: projectId, threshold: synThreshold, top_k: synTopK, max_links: synMaxLinks, dry_run: synDryRun, branch: synBranch || null })}>
-              Run: vault synthesize
-            </button>
-          </div>
-        </Section>
-
-        <Section title="strategy">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={stratBranch} onChange={(e) => setStratBranch(e.target.value)} />
-            <select className="border border-gray-300 p-2" value={stratFormat} onChange={(e) => setStratFormat(e.target.value as any)}>
-              <option value="rich">rich</option>
-              <option value="json">json</option>
-            </select>
-            <label className="text-sm"><input type="checkbox" checked={stratExecute} onChange={(e) => setStratExecute(e.target.checked)} /> execute (safe subset)</label>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/strategy', { id: projectId, branch: stratBranch || null, execute: stratExecute, format: stratFormat })}>
-              Run: vault strategy
-            </button>
-          </div>
-        </Section>
-
-        <Section title="watch">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">add</div>
-            <select className="border border-gray-300 p-2" value={watchType} onChange={(e) => setWatchType(e.target.value as any)}>
-              <option value="url">url</option>
-              <option value="query">query</option>
-            </select>
-            <input className="border border-gray-300 p-2" placeholder="target" value={watchTarget} onChange={(e) => setWatchTarget(e.target.value)} />
-            <input className="border border-gray-300 p-2" type="number" value={watchInterval} onChange={(e) => setWatchInterval(parseInt(e.target.value || '3600', 10))} />
-            <input className="border border-gray-300 p-2" placeholder="tags" value={watchTags} onChange={(e) => setWatchTags(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={watchBranch} onChange={(e) => setWatchBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !watchTarget} onClick={() => run('/vault/watch/add', { id: projectId, type: watchType, target: watchTarget, interval: watchInterval, tags: watchTags, branch: watchBranch || null })}>
-              Run: vault watch add
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">list</div>
-            <select className="border border-gray-300 p-2" value={watchListStatus} onChange={(e) => setWatchListStatus(e.target.value as any)}>
-              <option value="active">active</option>
-              <option value="disabled">disabled</option>
-              <option value="all">all</option>
-            </select>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/watch/list', { id: projectId, status: watchListStatus, branch: watchBranch || null })}>
-              Run: vault watch list
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">disable</div>
-            <input className="border border-gray-300 p-2" placeholder="target-id" value={watchDisableId} onChange={(e) => setWatchDisableId(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!watchDisableId} onClick={() => run('/vault/watch/disable', { target_id: watchDisableId })}>
-              Run: vault watch disable
-            </button>
-          </div>
-        </Section>
-
-        <Section title="watchdog (once)">
-          <div className="grid grid-cols-1 gap-2">
-            <input className="border border-gray-300 p-2" type="number" value={wdLimit} onChange={(e) => setWdLimit(parseInt(e.target.value || '10', 10))} />
-            <input className="border border-gray-300 p-2" placeholder="branch (optional; requires project)" value={wdBranch} onChange={(e) => setWdBranch(e.target.value)} />
-            <label className="text-sm"><input type="checkbox" checked={wdDryRun} onChange={(e) => setWdDryRun(e.target.checked)} /> dry-run</label>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" onClick={() => run('/vault/watchdog/once', { id: projectId || null, branch: wdBranch || null, limit: wdLimit, dry_run: wdDryRun })}>
-              Run: vault watchdog --once
-            </button>
-          </div>
-        </Section>
-
-        <Section title="branch">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">create</div>
-            <input className="border border-gray-300 p-2" placeholder="name" value={branchName} onChange={(e) => setBranchName(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="from (optional parent branch name)" value={branchFrom} onChange={(e) => setBranchFrom(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="hypothesis (optional)" value={branchHypothesis} onChange={(e) => setBranchHypothesis(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !branchName} onClick={() => run('/vault/branch/create', { id: projectId, name: branchName, from: branchFrom || null, hypothesis: branchHypothesis })}>
-              Run: vault branch create
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">list</div>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/branch/list', { id: projectId })}>
-              Run: vault branch list
-            </button>
-          </div>
-        </Section>
-
-        <Section title="hypothesis">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">add</div>
-            <input className="border border-gray-300 p-2" placeholder="branch" value={hypBranch} onChange={(e) => setHypBranch(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="statement" value={hypStatement} onChange={(e) => setHypStatement(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="rationale" value={hypRationale} onChange={(e) => setHypRationale(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <input className="border border-gray-300 p-2" type="number" step="0.01" value={hypConf} onChange={(e) => setHypConf(parseFloat(e.target.value || '0.5'))} />
-              <select className="border border-gray-300 p-2" value={hypStatus} onChange={(e) => setHypStatus(e.target.value as any)}>
-                <option value="open">open</option>
-                <option value="accepted">accepted</option>
-                <option value="rejected">rejected</option>
-                <option value="archived">archived</option>
-              </select>
-            </div>
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !hypStatement} onClick={() => run('/vault/hypothesis/add', { id: projectId, branch: hypBranch, statement: hypStatement, rationale: hypRationale, conf: hypConf, status: hypStatus })}>
-              Run: vault hypothesis add
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">list</div>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={hypListBranch} onChange={(e) => setHypListBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/hypothesis/list', { id: projectId, branch: hypListBranch || null })}>
-              Run: vault hypothesis list
-            </button>
-          </div>
-        </Section>
-
-        <Section title="artifact">
-          <div className="grid grid-cols-1 gap-3">
-            <div className="font-bold text-sm">add</div>
-            <input className="border border-gray-300 p-2" placeholder="path" value={artPath} onChange={(e) => setArtPath(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="type" value={artType} onChange={(e) => setArtType(e.target.value)} />
-            <textarea className="border border-gray-300 p-2 h-20" placeholder="metadata JSON" value={artMetadataJson} onChange={(e) => setArtMetadataJson(e.target.value)} />
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={artBranch} onChange={(e) => setArtBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId || !artPath} onClick={() => {
-              try {
-                run('/vault/artifact/add', {
-                  id: projectId,
-                  path: artPath,
-                  type: artType,
-                  metadata: JSON.parse(artMetadataJson || '{}'),
-                  branch: artBranch || null,
-                });
-              } catch (e) {
-                alert('Invalid JSON in metadata');
-              }
-            }}>
-              Run: vault artifact add
-            </button>
-
-            <div className="font-bold text-sm pt-2 border-t border-gray-200">list</div>
-            <input className="border border-gray-300 p-2" placeholder="branch (optional)" value={artListBranch} onChange={(e) => setArtListBranch(e.target.value)} />
-            <button className="border border-gray-400 bg-gray-200 px-3 py-2" disabled={!projectId} onClick={() => run('/vault/artifact/list', { id: projectId, branch: artListBranch || null })}>
-              Run: vault artifact list
-            </button>
-          </div>
-        </Section>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Last command output">
-          {!last ? (
-            <div className="text-gray-600">No commands executed yet.</div>
+      <main className="flex-1 p-6 max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          {!currentProject ? (
+            <EntryScreen onSelectProject={setCurrentProject} setLastResult={setLastResult} />
           ) : (
-            <div className="space-y-2">
-              <div className="text-xs text-gray-600">{last.at}</div>
-              <div className="text-xs"><span className="font-bold">argv:</span> {last.argv.join(' ')}</div>
-              <div className="text-xs"><span className="font-bold">exit:</span> {last.exit_code} {last.truncated ? '(truncated)' : ''}</div>
-              {last.stderr && (
-                <pre className="text-xs bg-red-50 border border-red-200 p-2 overflow-auto whitespace-pre-wrap">{last.stderr}</pre>
-              )}
-              <pre className="text-xs bg-gray-50 border border-gray-200 p-2 overflow-auto whitespace-pre-wrap">{last.stdout}</pre>
-            </div>
+            <ProjectDetail
+              projectId={currentProject}
+              onBack={() => setCurrentProject(null)}
+              setLastResult={setLastResult}
+              devMode={devMode}
+            />
           )}
-        </Section>
+        </div>
 
-        <Section title="Run history (most recent first)">
-          <div className="text-xs text-gray-600 mb-2">Stored in-memory (50 max). Reload clears it.</div>
-          <div className="max-h-[420px] overflow-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="text-left border-b border-gray-200">
-                  <th className="p-1">time</th>
-                  <th className="p-1">exit</th>
-                  <th className="p-1">command</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((h, idx) => (
-                  <tr key={idx} className="border-b border-gray-100">
-                    <td className="p-1 text-gray-600">{h.at}</td>
-                    <td className={`p-1 ${h.ok ? 'text-green-700' : 'text-red-700'}`}>{h.exit_code}</td>
-                    <td className="p-1">{h.argv.slice(3).join(' ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="lg:col-span-1">
+          <div className="sticky top-20">
+            <div className="flex items-center gap-2 mb-2 text-gray-600 font-mono text-xs uppercase tracking-wider">
+              <Terminal className="w-3 h-3" /> Last Command Output
+            </div>
+            <CommandOutput result={lastResult} />
           </div>
-        </Section>
-      </div>
-
-      <div className="mt-4 text-xs text-gray-600">
-        Not exposed in Portal: <code>vault mcp</code> (long-running server; use CLI).
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
 
 export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-    </QueryClientProvider>
-  );
+  return <MainApp />;
 }

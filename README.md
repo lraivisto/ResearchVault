@@ -9,12 +9,9 @@ Vault is built CLI-first to close the loop between planning, ingestion, verifica
 ## ✨ Core Features
 
 *   **The Vault (SQLite)**: A persistent local ledger stored at `~/.researchvault/research_vault.db` (override via `RESEARCHVAULT_DB`).
-*   **Normalized Evidence Core**: Scalable storage for `artifacts`, `findings`, and `links` (graph-ready).
+*   **Normalized Evidence Core**: Scalable storage for `artifacts` and `findings`.
 *   **Divergent Reasoning**: First-class `branches` + `hypotheses` so agents can explore competing explanations without contaminating the main line.
-*   **Cross-Artifact Synthesis**: Deterministic local embeddings (feature hashing; no model downloads) + similarity links (`links`) across findings and artifacts.
 *   **Active Verification Protocol**: Auto-generated `verification_missions` for low-confidence or `unverified` findings (can run via Brave Search if configured).
-*   **Autonomous Strategist**: Analyze project state (events, findings, branches, queues) and recommend the Next Best Action (`vault strategy`).
-*   **MCP Server**: Expose the Vault over MCP (`python -m scripts.vault mcp` / `python -m scripts.mcp_server`).
 *   **Watchdog Mode**: Periodic ingestion for watched URL targets and query targets.
 *   **Unified Ingestion Engine**: Modular connectors for automated research capture.
 *   **Instrumentation 2.0**: Every research event tracks **Confidence** (0.0-1.0), **Source**, and **Tags**.
@@ -55,12 +52,7 @@ uv run python -m scripts.vault hypothesis add --id "metal-v1" --branch "alt-hypo
 uv run python -m scripts.vault insight --id "metal-v1" --add --branch "alt-hypothesis" --title "Counter-signal" --content "..." --tags "unverified"
 ```
 
-### 4. Cross-Artifact Synthesis
-```bash
-uv run python -m scripts.vault synthesize --id "metal-v1" --threshold 0.78 --top-k 5
-```
-
-### 5. Verification Missions
+### 4. Verification Missions
 ```bash
 uv run python -m scripts.vault verify plan --id "metal-v1" --threshold 0.7 --max 20
 uv run python -m scripts.vault verify list --id "metal-v1" --status open
@@ -74,14 +66,7 @@ uv run python -m scripts.vault watch add --id "metal-v1" --type query --target "
 uv run python -m scripts.vault watchdog --once --limit 10
 ```
 
-### 7. MCP Server
-```bash
-uv run python -m scripts.vault mcp --transport stdio
-# or:
-uv run python -m scripts.mcp_server
-```
-
-### 8. Export & Reporting
+### 6. Export & Reporting
 Ship research summaries to Markdown or JSON for external use or agent review.
 ```bash
 uv run python -m scripts.vault export --id "metal-v1" --format markdown --output summary.md

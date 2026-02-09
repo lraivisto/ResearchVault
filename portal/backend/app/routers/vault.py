@@ -42,7 +42,9 @@ def vault_init(req: InitRequest):
 
 @router.get("/list")
 def vault_list():
-    return _run(["list"], timeout_s=30)
+    # Portal needs structured data for the Entry Screen project table.
+    # The CLI remains the single source of truth; we request JSON output.
+    return _run(["list", "--format", "json"], timeout_s=30)
 
 
 class UpdateRequest(BaseModel):
@@ -276,52 +278,6 @@ class VerifyCompleteRequest(BaseModel):
 def vault_verify_complete(req: VerifyCompleteRequest):
     args = ["verify", "complete", "--mission", req.mission, "--status", req.status, "--note", req.note]
     return _run(args)
-
-
-class SynthesizeRequest(BaseModel):
-    id: str
-    branch: Optional[str] = None
-    threshold: float = Field(default=0.78, ge=0.0, le=1.0)
-    top_k: int = Field(default=5, ge=1, le=50)
-    max_links: int = Field(default=50, ge=1, le=500)
-    dry_run: bool = False
-
-
-@router.post("/synthesize")
-def vault_synthesize(req: SynthesizeRequest):
-    args = [
-        "synthesize",
-        "--id",
-        req.id,
-        "--threshold",
-        str(req.threshold),
-        "--top-k",
-        str(req.top_k),
-        "--max-links",
-        str(req.max_links),
-    ]
-    if req.dry_run:
-        args.append("--dry-run")
-    if req.branch:
-        args += ["--branch", req.branch]
-    return _run(args, timeout_s=120)
-
-
-class StrategyRequest(BaseModel):
-    id: str
-    branch: Optional[str] = None
-    execute: bool = False
-    format: Literal["rich", "json"] = "rich"
-
-
-@router.post("/strategy")
-def vault_strategy(req: StrategyRequest):
-    args = ["strategy", "--id", req.id, "--format", req.format]
-    if req.branch:
-        args += ["--branch", req.branch]
-    if req.execute:
-        args.append("--execute")
-    return _run(args, timeout_s=120)
 
 
 class WatchAddRequest(BaseModel):

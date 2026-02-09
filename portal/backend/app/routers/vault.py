@@ -67,6 +67,7 @@ class StatusRequest(BaseModel):
     id: str
     filter_tag: Optional[str] = None
     branch: Optional[str] = None
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/status")
@@ -76,12 +77,14 @@ def vault_status(req: StatusRequest):
         args += ["--filter-tag", req.filter_tag]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)
 
 
 class SummaryRequest(BaseModel):
     id: str
     branch: Optional[str] = None
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/summary")
@@ -89,6 +92,7 @@ def vault_summary(req: SummaryRequest):
     args = ["summary", "--id", req.id]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -194,6 +198,7 @@ class InsightListRequest(BaseModel):
     id: str
     filter_tag: Optional[str] = None
     branch: Optional[str] = None
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/insight/list")
@@ -203,6 +208,7 @@ def vault_insight_list(req: InsightListRequest):
         args += ["--filter-tag", req.filter_tag]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -226,6 +232,7 @@ class VerifyPlanRequest(BaseModel):
     branch: Optional[str] = None
     threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     max: int = Field(default=20, ge=1, le=200)
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/verify/plan")
@@ -233,6 +240,7 @@ def vault_verify_plan(req: VerifyPlanRequest):
     args = ["verify", "plan", "--id", req.id, "--threshold", str(req.threshold), "--max", str(req.max)]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -241,6 +249,7 @@ class VerifyListRequest(BaseModel):
     branch: Optional[str] = None
     status: Optional[Literal["open", "in_progress", "done", "blocked", "cancelled"]] = None
     limit: int = Field(default=50, ge=1, le=200)
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/verify/list")
@@ -250,6 +259,7 @@ def vault_verify_list(req: VerifyListRequest):
         args += ["--branch", req.branch]
     if req.status:
         args += ["--status", req.status]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -258,6 +268,7 @@ class VerifyRunRequest(BaseModel):
     branch: Optional[str] = None
     status: Literal["open", "blocked"] = "open"
     limit: int = Field(default=5, ge=1, le=50)
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/verify/run")
@@ -265,6 +276,7 @@ def vault_verify_run(req: VerifyRunRequest):
     args = ["verify", "run", "--id", req.id, "--status", req.status, "--limit", str(req.limit)]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args, timeout_s=120)
 
 
@@ -372,11 +384,13 @@ def vault_branch_create(req: BranchCreateRequest):
 
 class BranchListRequest(BaseModel):
     id: str
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/branch/list")
 def vault_branch_list(req: BranchListRequest):
     args = ["branch", "list", "--id", req.id]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -413,6 +427,7 @@ def vault_hypothesis_add(req: HypothesisAddRequest):
 class HypothesisListRequest(BaseModel):
     id: str
     branch: Optional[str] = None
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/hypothesis/list")
@@ -420,6 +435,7 @@ def vault_hypothesis_list(req: HypothesisListRequest):
     args = ["hypothesis", "list", "--id", req.id]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)
 
 
@@ -453,6 +469,7 @@ def vault_artifact_add(req: ArtifactAddRequest):
 class ArtifactListRequest(BaseModel):
     id: str
     branch: Optional[str] = None
+    format: Literal["rich", "json"] = "rich"
 
 
 @router.post("/artifact/list")
@@ -460,4 +477,5 @@ def vault_artifact_list(req: ArtifactListRequest):
     args = ["artifact", "list", "--id", req.id]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--format", req.format]
     return _run(args)

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useState, useRef, type ComponentType } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   FolderPlus,
   FolderSearch,
   GitBranch,
+  Globe,
   Lightbulb,
   Play,
   RefreshCw,
@@ -15,6 +16,74 @@ import {
 } from 'lucide-react';
 
 import { API_BASE } from './config';
+
+// --- React Bits / Aesthetic Components ---
+
+function DecryptedText({ text, speed = 50, className = '' }: { text: string, speed?: number, className?: string }) {
+  const [displayText, setDisplayText] = useState(text);
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+';
+
+  useEffect(() => {
+    let interval: any;
+    let iteration = 0;
+    
+    const startAnimation = () => {
+      iteration = 0;
+      clearInterval(interval);
+      interval = setInterval(() => {
+        setDisplayText(() => 
+            text.split('').map((char, index) => {
+                if(index < iteration) return text[index];
+                return chars[Math.floor(Math.random() * chars.length)];
+            }).join('')
+        );
+        if(iteration >= text.length) clearInterval(interval);
+        iteration += 1/3; 
+      }, speed);
+    };
+
+    startAnimation();
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return <span className={className}>{displayText}</span>;
+}
+
+function SpotlightCard({ children, className = "", spotlightColor = "rgba(255, 255, 255, 0.25)" }: { children: React.ReactNode, className?: string, spotlightColor?: string }) {
+  const divRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [opacity, setOpacity] = useState(0);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!divRef.current) return;
+    const rect = divRef.current.getBoundingClientRect();
+    setPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseEnter = () => setOpacity(1);
+  const handleMouseLeave = () => setOpacity(0);
+
+  return (
+    <div
+      ref={divRef}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative overflow-hidden ${className}`}
+    >
+      <div
+        className="pointer-events-none absolute -inset-px opacity-0 transition duration-300"
+        style={{
+          opacity,
+          background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, ${spotlightColor}, transparent 40%)`,
+        }}
+      />
+      {children}
+    </div>
+  );
+}
+
+// --- Types & API ---
 
 type VaultRunResult = {
   argv: string[];
@@ -32,6 +101,52 @@ type Project = {
   status: string;
   created_at: string;
   priority: number;
+};
+
+type VaultEvent = {
+  type: string;
+  step: number;
+  payload: string;
+  confidence: number;
+  source: string;
+  timestamp: string;
+  tags: string;
+};
+
+type Insight = {
+  title: string;
+  content: string;
+  evidence: string;
+  tags: string;
+  timestamp: string;
+  confidence: number;
+};
+
+type StatusData = {
+  project: Project;
+  recent_events: VaultEvent[];
+  insights: Insight[];
+};
+
+type Branch = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  hypothesis: string;
+  status: string;
+  created_at: string;
+};
+
+type VerificationMission = {
+  id: string;
+  status: string;
+  priority: number;
+  query: string;
+  finding_title: string;
+  finding_conf: number;
+  created_at: string;
+  completed_at: string | null;
+  last_error: string | null;
 };
 
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -98,6 +213,7 @@ function EntryScreen({
   const [error, setError] = useState<string | null>(null);
 
   const [showNew, setShowNew] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [newId, setNewId] = useState('');
   const [newName, setNewName] = useState('');
   const [newObjective, setNewObjective] = useState('');
@@ -142,28 +258,14 @@ function EntryScreen({
         throw new Error(res.stderr || 'vault init failed');
       }
 
-      // Keep "one click = one CLI command": update UI optimistically (no extra list command).
-      const nowIso = new Date().toISOString();
-      setProjects((prev) => {
-        const next: Project[] = [
-          {
-            id: newId,
-            name: newName || newId,
-            objective: newObjective,
-            status: 'active',
-            created_at: nowIso,
-            priority: newPriority,
-          },
-          ...prev.filter((p) => p.id !== newId),
-        ];
-        return next;
-      });
+      await handleListProjects(false);
 
       setShowNew(false);
       setNewId('');
       setNewName('');
       setNewObjective('');
       setNewPriority(0);
+      setShowAdvanced(false);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -206,7 +308,7 @@ function EntryScreen({
 
         <button
           onClick={() => setShowNew((v) => !v)}
-          className="flex items-center justify-center gap-2 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition"
+          className="flex items-center justify-center gap-2 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition shadow-[0_0_15px_rgba(0,255,100,0.1)]"
         >
           <FolderPlus className="w-5 h-5 text-green-600" />
           <span className="font-semibold text-gray-800">NEW PROJECT</span>
@@ -234,7 +336,7 @@ function EntryScreen({
       </div>
 
       {showNew && (
-        <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
+        <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-md animate-in fade-in zoom-in duration-300">
           <div className="flex items-center gap-2 mb-3">
             <FolderSearch className="w-4 h-4 text-gray-600" />
             <div className="font-bold text-gray-700">Initialize New Project</div>
@@ -243,28 +345,42 @@ function EntryScreen({
           <div className="grid grid-cols-1 gap-3">
             <input
               className="w-full p-2 border border-gray-300 rounded"
-              placeholder="Project ID (required)"
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-            />
-            <input
-              className="w-full p-2 border border-gray-300 rounded"
-              placeholder="Name (optional)"
+              placeholder="Project Name (e.g. 'Best Pizza 2026')"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
             <textarea
               className="w-full p-2 border border-gray-300 rounded h-24"
-              placeholder="Objective (required)"
+              placeholder="Objective (What are we solving?)"
               value={newObjective}
               onChange={(e) => setNewObjective(e.target.value)}
             />
-            <input
-              className="w-full p-2 border border-gray-300 rounded"
-              type="number"
-              value={newPriority}
-              onChange={(e) => setNewPriority(parseInt(e.target.value || '0', 10))}
-            />
+
+             <button 
+                type="button" 
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="text-xs text-gray-500 hover:text-gray-800 text-left underline"
+            >
+                {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings (ID, Priority)'}
+            </button>
+
+            {showAdvanced && (
+                <>
+                <input
+                  className="w-full p-2 border border-gray-300 rounded bg-gray-50"
+                  placeholder="Project ID (Optional - Auto-generated)"
+                  value={newId}
+                  onChange={(e) => setNewId(e.target.value)}
+                />
+                <input
+                  className="w-full p-2 border border-gray-300 rounded bg-gray-50"
+                  type="number"
+                  placeholder="Priority"
+                  value={newPriority}
+                  onChange={(e) => setNewPriority(parseInt(e.target.value || '0', 10))}
+                />
+                </>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
@@ -277,8 +393,8 @@ function EntryScreen({
               <button
                 type="button"
                 onClick={handleInit}
-                disabled={!newId.trim() || !newObjective.trim() || loading}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                disabled={(!newId.trim() && !newName.trim()) || !newObjective.trim() || loading}
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 shadow-[0_0_10px_rgba(37,99,235,0.3)] transition-all"
               >
                 Initialize
               </button>
@@ -367,7 +483,13 @@ function ProjectDetail({
   setLastResult: (r: VaultRunResult) => void;
   devMode: boolean;
 }) {
-  const [tab, setTab] = useState<'status' | 'insights' | 'verification' | 'branches'>('status');
+  const [tab, setTab] = useState<'status' | 'findings' | 'discovery' | 'branches'>('status');
+  const [statusData, setStatusData] = useState<StatusData | null>(null);
+
+  // Ingest State
+  const [showIngest, setShowIngest] = useState(false);
+  const [ingestUrl, setIngestUrl] = useState('');
+  const [isIngesting, setIsIngesting] = useState(false);
 
   // Dev Mode inputs (low-level commands)
   const [watchType, setWatchType] = useState<'url' | 'query'>('url');
@@ -381,14 +503,29 @@ function ProjectDetail({
   async function run(endpoint: string, payload?: unknown) {
     const res = await runVaultPost(endpoint, payload);
     setLastResult(res);
+    return res;
   }
+
+  useEffect(() => {
+    if (tab === 'status') {
+      run('/vault/status', { id: projectId, format: 'json' }).then((res) => {
+        if (res.ok) {
+          try {
+            setStatusData(JSON.parse(res.stdout));
+          } catch (e) {
+            console.error('Failed to parse status JSON', e);
+          }
+        }
+      });
+    }
+  }, [projectId, tab]);
 
   function TabButton({
     id,
     label,
     icon: Icon,
   }: {
-    id: 'status' | 'insights' | 'verification' | 'branches';
+    id: 'status' | 'findings' | 'discovery' | 'branches';
     label: string;
     icon: ComponentType<{ className?: string }>;
   }) {
@@ -414,26 +551,159 @@ function ProjectDetail({
         </button>
         <div>
           <div className="text-xs text-gray-500">Project</div>
-          <h1 className="text-2xl font-bold text-gray-800 font-mono">{projectId}</h1>
+          <h1 className="text-2xl font-bold text-gray-800 font-mono">
+            <DecryptedText text={projectId} speed={50} />
+          </h1>
         </div>
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
         <TabButton id="status" label="Status" icon={Activity} />
-        <TabButton id="insights" label="Insights" icon={Lightbulb} />
-        <TabButton id="verification" label="Verification" icon={CheckCircle} />
+        <TabButton id="findings" label="Findings" icon={Lightbulb} />
+        <TabButton id="discovery" label="Discovery" icon={CheckCircle} />
         <TabButton id="branches" label="Branches" icon={GitBranch} />
       </div>
 
       <div className="flex-1 overflow-auto">
         {tab === 'status' && (
-          <div className="space-y-4">
-            <button
-              onClick={() => run('/vault/status', { id: projectId })}
-              className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
-            >
-              Run: vault status
-            </button>
+          <div className="space-y-6">
+            <div className="flex justify-between items-start flex-wrap gap-2">
+               <div className="flex gap-2">
+                 <button
+                    onClick={() => {
+                      run('/vault/status', { id: projectId, format: 'json' }).then(res => {
+                        if (res.ok) setStatusData(JSON.parse(res.stdout));
+                      });
+                    }}
+                    className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" /> Refresh
+                  </button>
+                 
+                 <button 
+                    onClick={() => setShowIngest(!showIngest)}
+                    className="border border-blue-300 bg-blue-50 text-blue-700 px-4 py-2 rounded hover:bg-blue-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(37,99,235,0.2)] transition-all"
+                 >
+                    <Globe className="w-4 h-4" /> Ingest from Web
+                 </button>
+               </div>
+            </div>
+            
+            {showIngest && (
+                <div className="bg-white border border-blue-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                    <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-blue-600" /> Ingest Content
+                    </h3>
+                    <div className="flex gap-2">
+                        <input 
+                            value={ingestUrl}
+                            onChange={e => setIngestUrl(e.target.value)}
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Paste URL (e.g. https://arxiv.org/...)"
+                        />
+                        <button
+                            onClick={async () => {
+                                setIsIngesting(true);
+                                await run('/vault/scuttle', { id: projectId, url: ingestUrl });
+                                setIngestUrl('');
+                                setIsIngesting(false);
+                                setShowIngest(false);
+                                // Refresh status to show new event
+                                run('/vault/status', { id: projectId, format: 'json' }).then(res => {
+                                    if (res.ok) setStatusData(JSON.parse(res.stdout));
+                                });
+                            }}
+                            disabled={!ingestUrl || isIngesting}
+                            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50 font-semibold"
+                        >
+                            {isIngesting ? 'Ingesting...' : 'Run Ingest'}
+                        </button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                        Extracts text, summarizes, and tags content automatically.
+                    </div>
+                </div>
+            )}
+
+            {statusData && (
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">{statusData.project.name}</h2>
+                    <div className="text-sm text-gray-500 font-mono">{statusData.project.id}</div>
+                  </div>
+                   <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      statusData.project.status === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : statusData.project.status === 'completed'
+                          ? 'bg-blue-100 text-blue-800'
+                          : statusData.project.status === 'failed'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {statusData.project.status.toUpperCase()}
+                  </span>
+                </div>
+                
+                <div className="mb-6">
+                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Objective</div>
+                  <p className="text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{statusData.project.objective}</p>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                   <SpotlightCard className="bg-blue-50 rounded border border-blue-100" spotlightColor="rgba(59, 130, 246, 0.15)">
+                      <div className="p-3">
+                        <div className="text-xs text-blue-600 font-bold uppercase">Priority</div>
+                        <div className="text-2xl font-mono text-blue-900">{statusData.project.priority}</div>
+                      </div>
+                   </SpotlightCard>
+                   <SpotlightCard className="bg-purple-50 rounded border border-purple-100" spotlightColor="rgba(147, 51, 234, 0.15)">
+                      <div className="p-3">
+                        <div className="text-xs text-purple-600 font-bold uppercase">Findings</div>
+                        <div className="text-2xl font-mono text-purple-900">{statusData.insights.length}</div>
+                      </div>
+                   </SpotlightCard>
+                   <SpotlightCard className="bg-orange-50 rounded border border-orange-100" spotlightColor="rgba(249, 115, 22, 0.15)">
+                      <div className="p-3">
+                        <div className="text-xs text-orange-600 font-bold uppercase">Events</div>
+                        <div className="text-2xl font-mono text-orange-900">{statusData.recent_events.length}</div>
+                      </div>
+                   </SpotlightCard>
+                </div>
+
+                <div>
+                   <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Recent Events</div>
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-left text-sm">
+                       <thead className="bg-gray-50 border-b border-gray-200">
+                         <tr>
+                           <th className="p-2 text-gray-600">Time</th>
+                           <th className="p-2 text-gray-600">Source</th>
+                           <th className="p-2 text-gray-600">Type</th>
+                           <th className="p-2 text-gray-600">Conf</th>
+                           <th className="p-2 text-gray-600">Data</th>
+                         </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100">
+                         {statusData.recent_events.map((e, i) => (
+                           <tr key={i} className="hover:bg-gray-50">
+                             <td className="p-2 font-mono text-xs text-gray-500">{new Date(e.timestamp).toLocaleTimeString()}</td>
+                             <td className="p-2 text-cyan-700">{e.source}</td>
+                             <td className="p-2 font-medium">{e.type}</td>
+                             <td className={`p-2 font-mono ${e.confidence > 0.8 ? 'text-green-600' : e.confidence < 0.5 ? 'text-red-500' : 'text-yellow-600'}`}>
+                               {e.confidence.toFixed(2)}
+                             </td>
+                             <td className="p-2 text-gray-600 max-w-xs truncate" title={e.payload}>{e.payload.substring(0, 100)}</td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+                </div>
+              </div>
+            )}
 
             {devMode && (
               <div className="border border-yellow-300 bg-yellow-50 p-4 rounded space-y-4">
@@ -534,33 +804,12 @@ function ProjectDetail({
           </div>
         )}
 
-        {tab === 'insights' && (
+        {tab === 'findings' && (
           <InsightsPanel projectId={projectId} run={run} />
         )}
 
-        {tab === 'verification' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <button
-                onClick={() => run('/vault/verify/plan', { id: projectId })}
-                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm flex items-center justify-center gap-2"
-              >
-                <Play className="w-4 h-4" /> plan
-              </button>
-              <button
-                onClick={() => run('/vault/verify/list', { id: projectId, limit: 50 })}
-                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm"
-              >
-                list
-              </button>
-              <button
-                onClick={() => run('/vault/verify/run', { id: projectId, status: 'open', limit: 5 })}
-                className="border border-gray-300 bg-white px-3 py-2 rounded hover:bg-gray-50 text-sm"
-              >
-                run
-              </button>
-            </div>
-          </div>
+        {tab === 'discovery' && (
+          <VerificationPanel projectId={projectId} run={run} />
         )}
 
         {tab === 'branches' && (
@@ -576,48 +825,124 @@ function InsightsPanel({
   run,
 }: {
   projectId: string;
-  run: (endpoint: string, payload?: unknown) => Promise<void>;
+  run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
 }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+
+  useEffect(() => {
+    loadInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  async function loadInsights() {
+    const res = await run('/vault/insight/list', { id: projectId, format: 'json' });
+    if (res.ok) {
+      try {
+        setInsights(JSON.parse(res.stdout));
+      } catch (e) {
+        console.error("Failed to parse insights", e);
+      }
+    }
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white border border-gray-200 p-4 rounded shadow-sm">
-        <div className="font-bold text-gray-800 mb-3">Add Insight</div>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded text-sm mb-2"
-          placeholder="Title"
-        />
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded text-sm h-24 mb-3"
-          placeholder="Content"
-        />
-        <div className="flex justify-end">
+    <div className="space-y-6">
+      <div className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+           <div className="bg-yellow-100 p-2 rounded-full">
+             <Lightbulb className="w-5 h-5 text-yellow-600" />
+           </div>
+           <div>
+             <h3 className="font-bold text-gray-800">New Finding</h3>
+             <div className="text-xs text-gray-500">Log a key finding or observation</div>
+           </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Finding Headline</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="E.g. 'Database latency spikes during backups'"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Observation / Evidence</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded text-sm h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              placeholder="Describe what you found. Markdown is supported."
+            />
+          </div>
+        </div>
+        
+        <div className="flex justify-end mt-4">
           <button
-            disabled={!title.trim() || !content.trim()}
+            disabled={!title.trim() || !content.trim() || isAdding}
             onClick={async () => {
+              setIsAdding(true);
               await run('/vault/insight/add', { id: projectId, title, content, tags: '' });
               setTitle('');
               setContent('');
+              setIsAdding(false);
+              loadInsights();
             }}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
+            className="bg-black text-white px-5 py-2 rounded-md hover:bg-gray-800 disabled:opacity-50 text-sm font-medium flex items-center gap-2 transition-all shadow-[0_0_10px_rgba(0,0,0,0.2)]"
           >
-            Add
+            {isAdding ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+            {isAdding ? 'Saving...' : 'Add a Finding'}
           </button>
         </div>
       </div>
 
-      <button
-        onClick={() => run('/vault/insight/list', { id: projectId })}
-        className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
-      >
-        Run: vault insight (list)
-      </button>
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+          <h3 className="font-bold text-gray-700">Key Findings ({insights.length})</h3>
+          <button onClick={loadInsights} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {insights.length === 0 && (
+             <div className="p-12 text-center">
+               <div className="text-gray-300 mb-2"><Lightbulb className="w-12 h-12 mx-auto" /></div>
+               <div className="text-gray-500 font-medium">No findings yet</div>
+               <div className="text-gray-400 text-sm">Add your first finding above.</div>
+             </div>
+          )}
+          {insights.map((insight, idx) => (
+            <div key={idx} className="p-6 hover:bg-gray-50 transition group">
+              <div className="flex justify-between items-start mb-2">
+                <h4 className="font-bold text-gray-900 text-lg leading-tight">{insight.title}</h4>
+                <div className="flex items-center gap-2 shrink-0">
+                   <span className="text-xs text-gray-400 font-mono">{new Date(insight.timestamp).toLocaleDateString()}</span>
+                   <span className={`text-xs font-bold px-2 py-0.5 rounded ${insight.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                     {(insight.confidence * 100).toFixed(0)}% Conf
+                   </span>
+                </div>
+              </div>
+              <div className="prose prose-sm max-w-none text-gray-700">
+                <p className="whitespace-pre-wrap">{insight.content}</p>
+              </div>
+              {insight.tags && (
+                 <div className="flex gap-2 mt-3 flex-wrap">
+                    {insight.tags.split(',').map(tag => (
+                       <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full border border-gray-200">
+                          #{tag.trim()}
+                       </span>
+                    ))}
+                 </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -627,40 +952,229 @@ function BranchesPanel({
   run,
 }: {
   projectId: string;
-  run: (endpoint: string, payload?: unknown) => Promise<void>;
+  run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
 }) {
   const [name, setName] = useState('');
+  const [branches, setBranches] = useState<Branch[]>([]);
+
+  useEffect(() => {
+    loadBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  async function loadBranches() {
+    const res = await run('/vault/branch/list', { id: projectId, format: 'json' });
+    if (res.ok) {
+      try {
+        setBranches(JSON.parse(res.stdout));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white border border-gray-200 p-4 rounded shadow-sm">
-        <div className="font-bold text-gray-800 mb-3">Create Branch</div>
+    <div className="space-y-6">
+      <div className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+        <div className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <GitBranch className="w-5 h-5 text-gray-500" /> 
+            <span>Create Divergent Branch</span>
+        </div>
         <div className="flex gap-2">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded text-sm"
-            placeholder="Branch name"
+            className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Branch name (e.g. hypothesis-alpha)"
           />
           <button
             disabled={!name.trim()}
             onClick={async () => {
               await run('/vault/branch/create', { id: projectId, name });
               setName('');
+              loadBranches();
             }}
-            className="bg-gray-900 text-white px-4 py-2 rounded hover:bg-gray-800 disabled:opacity-50 text-sm"
+            className="bg-black text-white px-5 py-2 rounded-md hover:bg-gray-800 disabled:opacity-50 text-sm font-medium"
           >
-            Create
+            Create Branch
           </button>
         </div>
+        <p className="text-xs text-gray-500 mt-2">
+          Branches allow you to pursue alternative hypotheses without polluting the main timeline.
+        </p>
       </div>
 
-      <button
-        onClick={() => run('/vault/branch/list', { id: projectId })}
-        className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm"
-      >
-        Run: vault branch list
-      </button>
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+           <h3 className="font-bold text-gray-700">Active Branches</h3>
+           <button onClick={loadBranches} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
+             <RefreshCw className="w-4 h-4" />
+           </button>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="bg-white border-b border-gray-100">
+            <tr>
+              <th className="px-6 py-3 text-gray-500 font-medium">Name</th>
+              <th className="px-6 py-3 text-gray-500 font-medium">Status</th>
+              <th className="px-6 py-3 text-gray-500 font-medium">Hypothesis</th>
+              <th className="px-6 py-3 text-gray-500 font-medium">Parent</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {branches.map((b) => (
+              <tr key={b.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 font-mono text-blue-700 font-bold">{b.name}</td>
+                <td className="px-6 py-4">
+                   <span className={`px-2 py-0.5 rounded text-xs uppercase font-bold ${b.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{b.status}</span>
+                </td>
+                <td className="px-6 py-4 text-gray-600 italic">{b.hypothesis || '-'}</td>
+                <td className="px-6 py-4 text-gray-400 font-mono text-xs">{b.parent_id || 'root'}</td>
+              </tr>
+            ))}
+            {branches.length === 0 && (
+                <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No divergent branches found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function VerificationPanel({
+  projectId,
+  run,
+}: {
+  projectId: string;
+  run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
+}) {
+  const [missions, setMissions] = useState<VerificationMission[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadMissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  async function loadMissions() {
+    setLoading(true);
+    const res = await run('/vault/verify/list', { id: projectId, limit: 50, format: 'json' });
+    setLoading(false);
+    if (res.ok) {
+      try {
+        setMissions(JSON.parse(res.stdout));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={async () => {
+            setLoading(true);
+            await run('/vault/verify/plan', { id: projectId, format: 'json' });
+            await loadMissions();
+            setLoading(false);
+          }}
+          disabled={loading}
+          className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm hover:shadow-md hover:border-purple-300 transition flex flex-col items-center gap-3 text-center group"
+        >
+          <div className="p-3 bg-purple-50 rounded-full group-hover:bg-purple-100 transition">
+            <Play className="w-6 h-6 text-purple-600" />
+          </div>
+          <div>
+            <div className="font-bold text-gray-800">Discover Links</div>
+            <div className="text-xs text-gray-500 mt-1">Scan low-confidence findings</div>
+          </div>
+        </button>
+
+        <button
+          onClick={async () => {
+            setLoading(true);
+            await run('/vault/verify/run', { id: projectId, status: 'open', limit: 5, format: 'json' });
+            await loadMissions();
+            setLoading(false);
+          }}
+          disabled={loading}
+          className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm hover:shadow-md hover:border-green-300 transition flex flex-col items-center gap-3 text-center group"
+        >
+          <div className="p-3 bg-green-50 rounded-full group-hover:bg-green-100 transition">
+            <Activity className="w-6 h-6 text-green-600" />
+          </div>
+          <div>
+            <div className="font-bold text-gray-800">Verify Links</div>
+            <div className="text-xs text-gray-500 mt-1">Run active discovery missions</div>
+          </div>
+        </button>
+
+        <SpotlightCard className="bg-gray-50 border border-gray-200 rounded-lg flex flex-col justify-center gap-2" spotlightColor="rgba(0,0,0,0.05)">
+           <div className="p-6">
+             <div className="text-sm font-bold text-gray-600 uppercase tracking-wider text-center mb-2">Discovery Overview</div>
+             <div className="flex justify-between px-4">
+                <div className="text-center">
+                   <div className="text-2xl font-mono text-blue-600">{missions.filter(m => m.status === 'open').length}</div>
+                   <div className="text-[10px] text-gray-500 font-bold uppercase">Open</div>
+                </div>
+                <div className="text-center">
+                   <div className="text-2xl font-mono text-green-600">{missions.filter(m => m.status === 'done').length}</div>
+                   <div className="text-[10px] text-gray-500 font-bold uppercase">Done</div>
+                </div>
+                <div className="text-center">
+                   <div className="text-2xl font-mono text-red-600">{missions.filter(m => m.status === 'blocked').length}</div>
+                   <div className="text-[10px] text-gray-500 font-bold uppercase">Blocked</div>
+                </div>
+             </div>
+           </div>
+        </SpotlightCard>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+          <div className="font-bold text-gray-700">Discovery Log</div>
+          <button onClick={loadMissions} disabled={loading} className="text-gray-500 hover:text-gray-900 transition">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <table className="w-full text-left text-sm">
+          <thead className="bg-white border-b border-gray-100">
+            <tr>
+              <th className="px-6 py-3 text-gray-500 font-medium">Status</th>
+              <th className="px-6 py-3 text-gray-500 font-medium">Finding Context</th>
+              <th className="px-6 py-3 text-gray-500 font-medium">Search Query</th>
+              <th className="px-6 py-3 text-gray-500 font-medium text-right">Conf</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {missions.map((m) => (
+              <tr key={m.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4">
+                   <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
+                     m.status === 'done' ? 'bg-green-100 text-green-800' :
+                     m.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                     m.status === 'open' ? 'bg-blue-100 text-blue-800' :
+                     'bg-gray-100 text-gray-800'
+                   }`}>
+                     {m.status}
+                   </span>
+                </td>
+                <td className="px-6 py-4 text-gray-800 font-medium max-w-xs truncate" title={m.finding_title}>
+                  {m.finding_title || 'Unknown Finding'}
+                </td>
+                <td className="px-6 py-4 text-gray-600 font-mono text-xs max-w-xs truncate" title={m.query}>
+                  {m.query}
+                </td>
+                <td className="px-6 py-4 text-right font-mono">{(m.finding_conf * 100).toFixed(0)}%</td>
+              </tr>
+            ))}
+            {missions.length === 0 && (
+               <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No missions found. Click 'Discover Links' to start.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -744,7 +1258,9 @@ function MainApp() {
         <div className="flex items-center gap-3">
           <Terminal className="w-6 h-6 text-gray-700" />
           <div>
-            <div className="font-bold text-lg tracking-tight">Portal Command Center</div>
+            <div className="font-bold text-lg tracking-tight">
+              <DecryptedText text="Portal Command Center" speed={70} className="text-gray-900" />
+            </div>
             <div className="text-xs text-gray-500">
               A visual shell over <code>scripts.vault</code>. Every button runs exactly one CLI command.
             </div>

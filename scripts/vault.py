@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import json
+import re
 from rich.console import Console
 from rich.table import Table
 from rich import box
@@ -24,8 +25,8 @@ def main():
 
     # Init
     init_parser = subparsers.add_parser("init")
-    init_parser.add_argument("--id", required=True)
-    init_parser.add_argument("--name")
+    init_parser.add_argument("--id", required=False, help="Project ID (optional if --name is provided)")
+    init_parser.add_argument("--name", help="Project Name")
     init_parser.add_argument("--objective", required=True)
     init_parser.add_argument("--priority", type=int, default=0)
 
@@ -74,6 +75,7 @@ def main():
     status_parser.add_argument("--id", required=True)
     status_parser.add_argument("--filter-tag", help="Filter events by tag")
     status_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    status_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Insight
     insight_parser = subparsers.add_parser("insight")
@@ -86,6 +88,7 @@ def main():
     insight_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
     insight_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    insight_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Interactive Insight Mode
     insight_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive session to add multiple insights")
@@ -94,6 +97,7 @@ def main():
     summary_parser = subparsers.add_parser("summary")
     summary_parser.add_argument("--id", required=True)
     summary_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    summary_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Branches
     branch_parser = subparsers.add_parser("branch", help="Manage divergent reasoning branches")
@@ -107,6 +111,7 @@ def main():
 
     branch_list = branch_sub.add_parser("list", help="List branches")
     branch_list.add_argument("--id", required=True)
+    branch_list.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Hypotheses
     hyp_parser = subparsers.add_parser("hypothesis", help="Manage hypotheses within branches")
@@ -123,6 +128,7 @@ def main():
     hyp_list = hyp_sub.add_parser("list", help="List hypotheses")
     hyp_list.add_argument("--id", required=True)
     hyp_list.add_argument("--branch", default=None, help="Branch name (omit for all)")
+    hyp_list.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Artifacts
     artifact_parser = subparsers.add_parser("artifact", help="Register local artifacts for synthesis/linking")
@@ -138,6 +144,7 @@ def main():
     artifact_list = artifact_sub.add_parser("list", help="List artifacts")
     artifact_list.add_argument("--id", required=True)
     artifact_list.add_argument("--branch", default=None, help="Branch name (default: main)")
+    artifact_list.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Verification protocol
     verify_parser = subparsers.add_parser("verify", help="Active verification protocol (missions)")
@@ -148,18 +155,21 @@ def main():
     verify_plan.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_plan.add_argument("--threshold", type=float, default=0.7)
     verify_plan.add_argument("--max", dest="max_missions", type=int, default=20)
+    verify_plan.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     verify_list = verify_sub.add_parser("list", help="List verification missions")
     verify_list.add_argument("--id", required=True)
     verify_list.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_list.add_argument("--status", default=None, choices=["open", "in_progress", "done", "blocked", "cancelled"])
     verify_list.add_argument("--limit", type=int, default=50)
+    verify_list.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     verify_run = verify_sub.add_parser("run", help="Execute missions via cache/Brave (if configured)")
     verify_run.add_argument("--id", required=True)
     verify_run.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_run.add_argument("--status", default="open", choices=["open", "blocked"])
     verify_run.add_argument("--limit", type=int, default=5)
+    verify_run.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     verify_complete = verify_sub.add_parser("complete", help="Manually update a mission status")
     verify_complete.add_argument("--mission", required=True)
@@ -197,7 +207,19 @@ def main():
     args = parser.parse_args()
 
     if args.command == "init":
-        core.start_project(args.id, args.name or args.id, args.objective, args.priority)
+        project_id = args.id
+        if not project_id:
+            if not args.name:
+                console.print("[bold red]Error:[/bold red] Either --id or --name must be provided.")
+                sys.exit(1)
+            # Generate slug from name
+            slug = args.name.lower()
+            slug = re.sub(r'[^a-z0-9]+', '-', slug)
+            slug = slug.strip('-')
+            project_id = slug
+            console.print(f"[dim]Auto-generated ID: {project_id}[/dim]")
+
+        core.start_project(project_id, args.name or project_id, args.objective, args.priority)
     elif args.command == "export":
         data = core.get_status(args.id, branch=args.branch)
         if not data:
@@ -320,14 +342,31 @@ def main():
             insights = core.get_insights(args.id, branch=args.branch)
             events = status['recent_events']
             
-            console.print(Panel(
-                f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
-                f"[bold cyan]Objective:[/] {p[2]}\n"
-                f"[bold cyan]Insights:[/] {len(insights)}\n"
-                f"[bold cyan]Events logged:[/] {len(events)}",
-                title="Vault Quick Summary",
-                border_style="magenta"
-            ))
+            if args.format == 'json':
+                summary_data = {
+                    "project": {
+                        "id": p[0],
+                        "name": p[1],
+                        "objective": p[2],
+                        "status": p[3],
+                        "created_at": p[4],
+                        "priority": p[5]
+                    },
+                    "counts": {
+                        "insights": len(insights),
+                        "events": len(events)
+                    }
+                }
+                print(json.dumps(summary_data, indent=2, default=str))
+            else:
+                console.print(Panel(
+                    f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
+                    f"[bold cyan]Objective:[/] {p[2]}\n"
+                    f"[bold cyan]Insights:[/] {len(insights)}\n"
+                    f"[bold cyan]Events logged:[/] {len(events)}",
+                    title="Vault Quick Summary",
+                    border_style="magenta"
+                ))
     elif args.command == "scuttle":
         try:
             service = core.get_ingest_service()
@@ -405,46 +444,83 @@ def main():
         if not status:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
-            p = status['project']
-            # p: id, name, objective, status, created_at, priority
-            
-            # Header Info
-            info_text = f"[bold white]{p[1]}[/bold white] [dim]({p[0]})[/dim]\n"
-            info_text += f"Status: [bold { 'green' if p[3]=='active' else 'red'}]{p[3].upper()}[/]\n"
-            info_text += f"Objective: {p[2]}\n"
-            info_text += f"Created: {p[4]}"
-            
-            # Event Table
-            event_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
-            event_table.add_column("Time", style="dim")
-            event_table.add_column("Source", style="cyan")
-            event_table.add_column("Type", style="yellow")
-            event_table.add_column("Conf", justify="right")
-            event_table.add_column("Data")
-            
-            for e in status['recent_events']:
-                # e: event_type, step, payload, confidence, source, timestamp, tags
-                conf_color = "green" if e[3] > 0.8 else "yellow" if e[3] > 0.5 else "red"
-                short_time = e[5].split("T")[1][:8]
-                event_table.add_row(
-                    short_time,
-                    e[4],
-                    e[0],
-                    f"[{conf_color}]{e[3]}[/]",
-                    e[2][:50] + "..." if len(e[2]) > 50 else e[2]
-                )
-            
-            # Insights Panel (if any)
-            insights = core.get_insights(args.id, branch=args.branch)
-            if insights:
-                insight_table = Table(box=box.SIMPLE, show_header=False)
-                for i in insights:
-                    insight_table.add_row(f"💡 [bold]{i[0]}[/]: {i[1]}")
-                content = Group(info_text, Rule(style="white"), event_table, Rule(style="white"), insight_table)
+            if args.format == 'json':
+                # Re-shape for cleaner JSON
+                p = status['project']
+                insights = core.get_insights(args.id, branch=args.branch)
+                json_data = {
+                    "project": {
+                        "id": p[0],
+                        "name": p[1],
+                        "objective": p[2],
+                        "status": p[3],
+                        "created_at": p[4],
+                        "priority": p[5]
+                    },
+                    "recent_events": [
+                        {
+                            "type": e[0],
+                            "step": e[1],
+                            "payload": e[2],
+                            "confidence": e[3],
+                            "source": e[4],
+                            "timestamp": e[5],
+                            "tags": e[6]
+                        } for e in status['recent_events']
+                    ],
+                    "insights": [
+                        {
+                            "title": i[0],
+                            "content": i[1],
+                            "evidence": i[2],
+                            "tags": i[3],
+                            "timestamp": i[4],
+                            "confidence": i[5]
+                        } for i in insights
+                    ]
+                }
+                print(json.dumps(json_data, indent=2, default=str))
             else:
-                content = Group(info_text, Rule(style="white"), event_table)
+                p = status['project']
+                # p: id, name, objective, status, created_at, priority
                 
-            console.print(Panel(content, title=f"Research Vault Status: {p[1]}", border_style="blue"))
+                # Header Info
+                info_text = f"[bold white]{p[1]}[/bold white] [dim]({p[0]})[/dim]\n"
+                info_text += f"Status: [bold { 'green' if p[3]=='active' else 'red'}]{p[3].upper()}[/]\n"
+                info_text += f"Objective: {p[2]}\n"
+                info_text += f"Created: {p[4]}"
+                
+                # Event Table
+                event_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
+                event_table.add_column("Time", style="dim")
+                event_table.add_column("Source", style="cyan")
+                event_table.add_column("Type", style="yellow")
+                event_table.add_column("Conf", justify="right")
+                event_table.add_column("Data")
+                
+                for e in status['recent_events']:
+                    # e: event_type, step, payload, confidence, source, timestamp, tags
+                    conf_color = "green" if e[3] > 0.8 else "yellow" if e[3] > 0.5 else "red"
+                    short_time = e[5].split("T")[1][:8]
+                    event_table.add_row(
+                        short_time,
+                        e[4],
+                        e[0],
+                        f"[{conf_color}]{e[3]}[/]",
+                        e[2][:50] + "..." if len(e[2]) > 50 else e[2]
+                    )
+                
+                # Insights Panel (if any)
+                insights = core.get_insights(args.id, branch=args.branch)
+                if insights:
+                    insight_table = Table(box=box.SIMPLE, show_header=False)
+                    for i in insights:
+                        insight_table.add_row(f"💡 [bold]{i[0]}[/]: {i[1]}")
+                    content = Group(info_text, Rule(style="white"), event_table, Rule(style="white"), insight_table)
+                else:
+                    content = Group(info_text, Rule(style="white"), event_table)
+                    
+                console.print(Panel(content, title=f"Research Vault Status: {p[1]}", border_style="blue"))
     elif args.command == "insight":
         if args.interactive:
             console.print(Panel(f"Interactive Insight Mode for [bold cyan]{args.id}[/bold cyan]\nType [bold red]exit[/] to finish.", border_style="green"))
@@ -469,34 +545,60 @@ def main():
                 print(f"Added insight to project '{args.id}'.")
         else:
             insights = core.get_insights(args.id, tag_filter=args.filter_tag, branch=args.branch)
-            if not insights:
-                print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
-            for i in insights:
-                evidence = {}
-                try:
-                    evidence = json.loads(i[2])
-                except:
-                    pass
-                source = evidence.get("source_url", "unknown")
-                print(f"[{i[4]}] {i[0]} (Conf: {i[5]})\nContent: {i[1]}\nSource: {source}\nTags: {i[3]}\n")
+            if args.format == 'json':
+                json_data = [
+                    {
+                        "title": i[0],
+                        "content": i[1],
+                        "evidence": i[2],
+                        "tags": i[3],
+                        "timestamp": i[4],
+                        "confidence": i[5]
+                    } for i in insights
+                ]
+                print(json.dumps(json_data, indent=2, default=str))
+            else:
+                if not insights:
+                    print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
+                for i in insights:
+                    evidence = {}
+                    try:
+                        evidence = json.loads(i[2])
+                    except:
+                        pass
+                    source = evidence.get("source_url", "unknown")
+                    print(f"[{i[4]}] {i[0]} (Conf: {i[5]})\nContent: {i[1]}\nSource: {source}\nTags: {i[3]}\n")
     elif args.command == "branch":
         if args.branch_command == "create":
             branch_id = core.create_branch(args.id, args.name, parent=args.parent, hypothesis=args.hypothesis)
             console.print(f"[green]✔ Created branch[/green] [bold]{args.name}[/] ({branch_id}) for project [bold]{args.id}[/]")
         elif args.branch_command == "list":
             rows = core.list_branches(args.id)
-            if not rows:
-                console.print("[yellow]No branches found.[/yellow]")
+            if args.format == 'json':
+                json_data = [
+                    {
+                        "id": bid,
+                        "name": name,
+                        "parent_id": parent_id,
+                        "hypothesis": hypothesis,
+                        "status": status,
+                        "created_at": created_at
+                    } for (bid, name, parent_id, hypothesis, status, created_at) in rows
+                ]
+                print(json.dumps(json_data, indent=2, default=str))
             else:
-                table = Table(title=f"Branches: {args.id}", box=box.ROUNDED)
-                table.add_column("Name", style="cyan")
-                table.add_column("ID", style="dim")
-                table.add_column("Parent", style="magenta")
-                table.add_column("Status", style="bold")
-                table.add_column("Hypothesis")
-                for (bid, name, parent_id, hypothesis, status, created_at) in rows:
-                    table.add_row(name, bid, parent_id or "", status, (hypothesis or "")[:80])
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No branches found.[/yellow]")
+                else:
+                    table = Table(title=f"Branches: {args.id}", box=box.ROUNDED)
+                    table.add_column("Name", style="cyan")
+                    table.add_column("ID", style="dim")
+                    table.add_column("Parent", style="magenta")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Hypothesis")
+                    for (bid, name, parent_id, hypothesis, status, created_at) in rows:
+                        table.add_row(name, bid, parent_id or "", status, (hypothesis or "")[:80])
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] branch requires a subcommand (create|list).")
     elif args.command == "hypothesis":
@@ -512,18 +614,33 @@ def main():
             console.print(f"[green]✔ Added hypothesis[/green] {hid} to branch [bold]{args.branch}[/]")
         elif args.hyp_command == "list":
             rows = core.list_hypotheses(args.id, branch=args.branch)
-            if not rows:
-                console.print("[yellow]No hypotheses found.[/yellow]")
+            if args.format == 'json':
+                json_data = [
+                    {
+                        "id": hid,
+                        "branch_name": bname,
+                        "statement": stmt,
+                        "rationale": rationale,
+                        "confidence": conf,
+                        "status": status,
+                        "created_at": created_at,
+                        "updated_at": updated_at
+                    } for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows
+                ]
+                print(json.dumps(json_data, indent=2, default=str))
             else:
-                table = Table(title=f"Hypotheses: {args.id}", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Branch", style="cyan")
-                table.add_column("Status", style="bold")
-                table.add_column("Conf", justify="right")
-                table.add_column("Statement")
-                for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows:
-                    table.add_row(hid, bname, status, f"{conf:.2f}", (stmt or "")[:90])
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No hypotheses found.[/yellow]")
+                else:
+                    table = Table(title=f"Hypotheses: {args.id}", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Branch", style="cyan")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Conf", justify="right")
+                    table.add_column("Statement")
+                    for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows:
+                        table.add_row(hid, bname, status, f"{conf:.2f}", (stmt or "")[:90])
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] hypothesis requires a subcommand (add|list).")
     elif args.command == "artifact":
@@ -543,16 +660,28 @@ def main():
             console.print(f"[green]✔ Added artifact[/green] {artifact_id}")
         elif args.artifact_command == "list":
             rows = core.list_artifacts(args.id, branch=args.branch)
-            if not rows:
-                console.print("[yellow]No artifacts found.[/yellow]")
+            if args.format == 'json':
+                json_data = [
+                    {
+                        "id": aid,
+                        "type": atype,
+                        "path": path,
+                        "metadata": metadata,
+                        "created_at": created_at
+                    } for (aid, atype, path, metadata, created_at) in rows
+                ]
+                print(json.dumps(json_data, indent=2, default=str))
             else:
-                table = Table(title=f"Artifacts: {args.id}", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Type", style="cyan")
-                table.add_column("Path", style="green")
-                for (aid, atype, path, metadata, created_at) in rows:
-                    table.add_row(aid, atype, path)
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No artifacts found.[/yellow]")
+                else:
+                    table = Table(title=f"Artifacts: {args.id}", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Type", style="cyan")
+                    table.add_column("Path", style="green")
+                    for (aid, atype, path, metadata, created_at) in rows:
+                        table.add_row(aid, atype, path)
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] artifact requires a subcommand (add|list).")
     elif args.command == "verify":
@@ -563,16 +692,23 @@ def main():
                 threshold=args.threshold,
                 max_missions=args.max_missions,
             )
-            if not missions:
-                console.print("[yellow]No missions created (nothing under threshold or already planned).[/yellow]")
+            if args.format == 'json':
+                json_data = [
+                    {"mission_id": m[0], "finding_id": m[1], "query": m[2]} 
+                    for m in missions
+                ]
+                print(json.dumps(json_data, indent=2))
             else:
-                table = Table(title="Verification Missions (Created)", box=box.ROUNDED)
-                table.add_column("Mission", style="dim")
-                table.add_column("Finding", style="cyan")
-                table.add_column("Query", style="green")
-                for mid, fid, q in missions:
-                    table.add_row(mid, fid, q[:120])
-                console.print(table)
+                if not missions:
+                    console.print("[yellow]No missions created (nothing under threshold or already planned).[/yellow]")
+                else:
+                    table = Table(title="Verification Missions (Created)", box=box.ROUNDED)
+                    table.add_column("Mission", style="dim")
+                    table.add_column("Finding", style="cyan")
+                    table.add_column("Query", style="green")
+                    for mid, fid, q in missions:
+                        table.add_row(mid, fid, q[:120])
+                    console.print(table)
         elif args.verify_command == "list":
             rows = core.list_verification_missions(
                 args.id,
@@ -580,26 +716,42 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
-            if not rows:
-                console.print("[yellow]No missions found.[/yellow]")
+            if args.format == 'json':
+                json_data = [
+                    {
+                        "id": r[0],
+                        "status": r[1],
+                        "priority": r[2],
+                        "query": r[3],
+                        "finding_title": r[4],
+                        "finding_conf": r[5],
+                        "created_at": r[6],
+                        "completed_at": r[7],
+                        "last_error": r[8]
+                    } for r in rows
+                ]
+                print(json.dumps(json_data, indent=2, default=str))
             else:
-                table = Table(title="Verification Missions", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Status", style="bold")
-                table.add_column("Pri", justify="right", style="magenta")
-                table.add_column("Finding", style="cyan")
-                table.add_column("Conf", justify="right")
-                table.add_column("Query", style="green")
-                for mid, status, pri, query, title, conf, created_at, completed_at, last_error in rows:
-                    table.add_row(
-                        mid,
-                        status,
-                        str(pri),
-                        (title or "")[:40],
-                        f"{float(conf or 0.0):.2f}",
-                        (query or "")[:80],
-                    )
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No missions found.[/yellow]")
+                else:
+                    table = Table(title="Verification Missions", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Pri", justify="right", style="magenta")
+                    table.add_column("Finding", style="cyan")
+                    table.add_column("Conf", justify="right")
+                    table.add_column("Query", style="green")
+                    for mid, status, pri, query, title, conf, created_at, completed_at, last_error in rows:
+                        table.add_row(
+                            mid,
+                            status,
+                            str(pri),
+                            (title or "")[:40],
+                            f"{float(conf or 0.0):.2f}",
+                            (query or "")[:80],
+                        )
+                    console.print(table)
         elif args.verify_command == "run":
             results = core.run_verification_missions(
                 args.id,
@@ -607,22 +759,25 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
-            if not results:
-                console.print("[yellow]No missions executed.[/yellow]")
+            if args.format == 'json':
+                print(json.dumps(results, indent=2, default=str))
             else:
-                table = Table(title="Verification Run", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Status", style="bold")
-                table.add_column("Query", style="green")
-                table.add_column("Info")
-                for r in results:
-                    info = ""
-                    if r.get("meta"):
-                        info = json.dumps(r["meta"], ensure_ascii=True)[:120]
-                    if r.get("error"):
-                        info = r["error"][:120]
-                    table.add_row(r["id"], r["status"], (r["query"] or "")[:80], info)
-                console.print(table)
+                if not results:
+                    console.print("[yellow]No missions executed.[/yellow]")
+                else:
+                    table = Table(title="Verification Run", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Query", style="green")
+                    table.add_column("Info")
+                    for r in results:
+                        info = ""
+                        if r.get("meta"):
+                            info = json.dumps(r["meta"], ensure_ascii=True)[:120]
+                        if r.get("error"):
+                            info = r["error"][:120]
+                        table.add_row(r["id"], r["status"], (r["query"] or "")[:80], info)
+                    console.print(table)
         elif args.verify_command == "complete":
             core.set_verification_mission_status(args.mission, args.status, note=args.note)
             console.print(f"[green]✔ Updated mission[/green] {args.mission} -> {args.status}")

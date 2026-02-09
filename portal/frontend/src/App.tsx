@@ -5,6 +5,7 @@ import { useEventStream } from './hooks/useEventStream';
 import KnowledgeGraph from './components/KnowledgeGraph';
 import TelemetryConsole from './components/TelemetryConsole';
 import InspectorPanel from './components/InspectorPanel';
+import { API_BASE } from './config';
 import { Activity, Radio, FolderTree, Search } from 'lucide-react';
 
 const queryClient = new QueryClient();
@@ -24,7 +25,7 @@ function AppContent() {
         queryKey: ['projects', token],
         queryFn: async () => {
             if (!token) throw new Error('AUTH_REQUIRED');
-            const url = new URL('http://localhost:8000/api/projects');
+            const url = new URL(`${API_BASE}/projects`);
             url.searchParams.set('token', token);
             const res = await fetch(url.toString());
             if (res.status === 401 || res.status === 403) throw new Error('AUTH_FAILED');
@@ -39,7 +40,7 @@ function AppContent() {
         queryKey: ['graphData', projectId, token],
         queryFn: async () => {
             if (!token) throw new Error('AUTH_REQUIRED');
-            const url = new URL('http://localhost:8000/api/graph');
+            const url = new URL(`${API_BASE}/graph`);
             url.searchParams.set('token', token);
             if (projectId) url.searchParams.set('project_id', projectId);
             const res = await fetch(url.toString());
@@ -85,7 +86,7 @@ function AppContent() {
     const handleDispatchMission = async (type: string, findingId: string) => {
         try {
             if (!token) return;
-            const url = new URL('http://localhost:8000/api/missions');
+            const url = new URL(`${API_BASE}/missions`);
             url.searchParams.set('token', token);
 
             await fetch(url.toString(), {

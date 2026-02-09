@@ -12,6 +12,11 @@ cd "$ROOT_DIR"
 
 echo "Starting ResearchVault Portal..."
 
+# Cleanup old runs if they exist
+echo "Cleaning up any old portal processes..."
+pkill -f "run_portal.py" || true
+pkill -f "vite --port 5173" || true
+
 # Auth: backend requires RESEARCHVAULT_PORTAL_TOKEN. We'll generate one if not provided.
 if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
     RESEARCHVAULT_PORTAL_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
@@ -56,6 +61,16 @@ popd >/dev/null
 
 # 3. Start Backend
 echo "[3/4] Launching Backend (FastAPI)..."
+
+# Port conflict check
+BACKEND_PORT=8000
+if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo "Warning: Port $BACKEND_PORT is already in use."
+    echo "Attempting to identify process..."
+    lsof -i :$BACKEND_PORT
+    # We won't kill it automatically to be safe, but we'll try to let uvicorn fail or bind.
+fi
+
 # Use 'uv run' via full path
 "$UV_BIN" run run_portal.py &
 BACKEND_PID=$!

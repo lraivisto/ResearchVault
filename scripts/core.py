@@ -31,7 +31,14 @@ def scrub_data(data: Any) -> Any:
         data = re.sub(r'~/[a-zA-Z0-9._/-]*\.(?:ssh|bash|zsh|aws|config|env|key|pem|pgp|gpg|token)[a-zA-Z0-9._/-]*', '[REDACTED_SENSITIVE_PATH]', data)
         return data
     elif isinstance(data, dict):
-        return {k: scrub_data(v) for k, v in data.items()}
+        sensitive_keys = {"token", "key", "secret", "password", "auth", "api_key", "apikey"}
+        scrubbed = {}
+        for k, v in data.items():
+            if any(s in k.lower() for s in sensitive_keys) and isinstance(v, str):
+                scrubbed[k] = "[REDACTED]"
+            else:
+                scrubbed[k] = scrub_data(v)
+        return scrubbed
     elif isinstance(data, list):
         return [scrub_data(i) for i in data]
     return data

@@ -2,6 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+import uuid
+import hashlib
+from datetime import datetime
 
 import scripts.core as core
 import scripts.db as db
@@ -56,18 +59,7 @@ def create_mission(req: MissionRequest):
             req.query = row[0]
 
         # 2. Insert Mission directly using core DB logic (or custom wrapper)
-        # Since core.plan_verification_missions is a bit high-level, we'll implement a 
-        # direct insert here to be precise, or better yet, verify if core has a single-mission function.
-        # It doesn't seem to have a public `add_mission` function, so we'll use SQL directly 
-        # following the pattern in core.plan_verification_missions.
         
-        # ...Or we can just rely on the user to provide a query and use a stripped down version.
-        # Let's add a helper in this router for now.
-        
-        import uuid
-        import hashlib
-        from datetime import datetime
-
         mission_id = f"mis_{uuid.uuid4().hex[:10]}"
         qhash = core._query_hash(req.query)
         # Placeholder dedup - simple timestamp based to allow multiple runs

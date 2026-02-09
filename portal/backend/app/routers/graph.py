@@ -44,8 +44,18 @@ def get_graph_data(project_id: Optional[str] = None):
         })
 
     # 2. Fetch Links
-    # We only want links where both source and target exist in our node set
-    c.execute("SELECT source_id, target_id, link_type, metadata FROM links")
+    # We only want links where both source and target exist in our node set (filter by project if possible)
+    if project_id:
+        c.execute("""
+            SELECT l.source_id, l.target_id, l.link_type, l.metadata 
+            FROM links l
+            JOIN findings f1 ON l.source_id = f1.id
+            JOIN findings f2 ON l.target_id = f2.id
+            WHERE f1.project_id = ? AND f2.project_id = ?
+        """, (project_id, project_id))
+    else:
+        c.execute("SELECT source_id, target_id, link_type, metadata FROM links")
+    
     all_links = c.fetchall()
     
     links = []

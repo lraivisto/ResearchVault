@@ -1,5 +1,6 @@
 
 import { useEffect, useState, useRef } from 'react';
+import { API_BASE } from '../config';
 
 export interface LogEvent {
     id: string;
@@ -37,7 +38,7 @@ export function useEventStream(token: string | null, projectId?: string): UseEve
         }
 
         setStatus('connecting');
-        const url = new URL('http://localhost:8000/api/stream');
+        const url = new URL(`${API_BASE}/stream`);
         url.searchParams.set('last_event_id', '0');
         url.searchParams.set('token', token);
         if (projectId) url.searchParams.set('project_id', projectId);

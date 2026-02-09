@@ -3,6 +3,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import type { ForceGraphMethods, LinkObject, NodeObject } from 'react-force-graph-2d';
 import { useQuery } from '@tanstack/react-query';
+import { API_BASE } from '../config';
 
 interface GraphNode {
     id: string;
@@ -75,7 +76,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ onNodeSelect, lastUpdat
         queryKey: ['graphData', projectId, token],
         queryFn: async () => {
             if (!token) throw new Error('AUTH_REQUIRED');
-            const url = new URL('http://localhost:8000/api/graph');
+            const url = new URL(`${API_BASE}/graph`);
             url.searchParams.set('token', token);
             if (projectId) url.searchParams.set('project_id', projectId);
 

@@ -516,7 +516,7 @@ def vault_strategy(req: StrategyRequest):
 class SynthesizeRequest(BaseModel):
     id: str
     branch: Optional[str] = None
-    threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     top_k: int = Field(default=5, ge=1, le=50)
     max_links: int = Field(default=50, ge=1, le=500)
     format: Literal["rich", "json"] = "rich"

@@ -743,7 +743,7 @@ def main():
             )
     elif args.command == "mcp":
         # IMPORTANT: keep stdout clean for stdio transport.
-        from scripts.mcp_server import mcp as server
+        from scripts.services.mcp_server import mcp as server
 
         server.run(transport=args.transport, mount_path=args.mount_path)
     elif args.command == "watch":
@@ -786,7 +786,7 @@ def main():
         else:
             console.print("[red]Error:[/red] watch requires a subcommand (add|list|disable).")
     elif args.command == "watchdog":
-        from scripts.watchdog import loop as watchdog_loop, run_once
+        from scripts.services.watchdog import loop as watchdog_loop, run_once
 
         if args.once:
             actions = run_once(project_id=args.id, branch=args.branch, limit=args.limit, dry_run=args.dry_run)

@@ -13,6 +13,7 @@ metadata:
               "kind": "exec",
               "command": "python3 -m venv .venv && . .venv/bin/activate && pip install -e .",
               "label": "Initialize ResearchVault Environment",
+        "disableModelInvocation": true,
             },
           ],
       },

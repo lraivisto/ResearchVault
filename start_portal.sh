@@ -87,6 +87,16 @@ if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
     fi
 fi
 
+# Display token for easy access (critical for first-time users)
+echo ""
+echo "══════════════════════════════════════════════════════════"
+echo "  Portal Access Token: $RESEARCHVAULT_PORTAL_TOKEN"
+echo ""
+echo "  To log in, use this URL (token pre-filled):"
+echo "  http://localhost:5173/#token=$RESEARCHVAULT_PORTAL_TOKEN"
+echo "══════════════════════════════════════════════════════════"
+echo ""
+
 # Search Providers:
 # The vault can fall back to best-effort providers (DuckDuckGo/Wikipedia), but API-backed providers
 # (Brave/Serper/SearxNG) are recommended for higher quality and consistency.

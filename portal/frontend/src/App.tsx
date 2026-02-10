@@ -1466,6 +1466,9 @@ function MainApp() {
         <div className="bg-void-surface p-8 rounded border border-white/10 max-w-sm w-full space-y-4 text-gray-100">
           <h1 className="text-xl font-bold text-gray-100">ResearchVault Portal — Login</h1>
           <div className="text-sm text-gray-400">Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code> or use a tokenized link.</div>
+          <div className="text-xs text-gray-500 mt-1">
+            💡 <strong>Where's my token?</strong> Run <code>./start_portal.sh</code> to see your token, or check <code>.portal_auth</code>
+          </div>
           <input
             type="password"
             value={token}
@@ -1480,7 +1483,15 @@ function MainApp() {
           >
             Login
           </button>
-          {authError && <div className="text-sm text-red-200">{authError}</div>}
+          {authError && (
+            <div className="text-sm text-red-200 space-y-2">
+              <div className="font-bold">❌ Login Failed</div>
+              <div>Invalid or expired token.</div>
+              <div className="text-xs bg-red-900/20 p-2 rounded border border-red-500/30">
+                <strong>How to fix:</strong> Run <code>./start_portal.sh</code> to see your current token and copy the auto-login URL.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

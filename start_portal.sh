@@ -87,6 +87,48 @@ if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
     fi
 fi
 
+# Brave Search:
+# Many "research" actions (search, verification, watchdog query targets) require BRAVE_API_KEY.
+# The Portal can also store it locally via Diagnostics in ~/.researchvault/portal/secrets.json.
+BRAVE_OK="false"
+if [ -n "${BRAVE_API_KEY:-}" ]; then
+    BRAVE_OK="true"
+else
+    SECRETS_FILE="$HOME/.researchvault/portal/secrets.json"
+    if [ -f "$SECRETS_FILE" ]; then
+        if python3 - "$SECRETS_FILE" <<'PY'
+import json, sys
+from pathlib import Path
+
+p = Path(sys.argv[1])
+try:
+    data = json.loads(p.read_text(encoding="utf-8"))
+    key = data.get("brave_api_key") if isinstance(data, dict) else None
+    if isinstance(key, str) and key.strip():
+        raise SystemExit(0)
+except Exception:
+    pass
+raise SystemExit(1)
+PY
+        then
+            BRAVE_OK="true"
+        fi
+    fi
+fi
+
+if [ "$BRAVE_OK" != "true" ]; then
+    echo ""
+    echo "WARNING: BRAVE_API_KEY is not configured."
+    echo "  - Live search, verification, and watchdog query targets will be blocked until configured."
+    echo "  - Fix: open Portal -> Diagnostics -> Brave Search -> Save Key (or export BRAVE_API_KEY in your shell)."
+    echo ""
+
+    if [ "${RESEARCHVAULT_PORTAL_REQUIRE_BRAVE_API_KEY:-false}" = "true" ]; then
+        echo "RESEARCHVAULT_PORTAL_REQUIRE_BRAVE_API_KEY=true; refusing to start." >&2
+        exit 1
+    fi
+fi
+
 # Dev CORS defaults (frontend may be opened as localhost or 127.0.0.1).
 export RESEARCHVAULT_PORTAL_CORS_ORIGINS="${RESEARCHVAULT_PORTAL_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
 

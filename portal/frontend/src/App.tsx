@@ -370,7 +370,7 @@ function EntryScreen({
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
           <div className="font-semibold text-gray-800">Projects</div>
           <div className="text-xs text-gray-500">
@@ -513,7 +513,7 @@ function ProjectDetail({
       <button
         onClick={() => setTab(id)}
         className={`flex items-center gap-2 px-4 py-2 border-b-2 transition whitespace-nowrap ${
-          active ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+          active ? 'border-cyan text-cyan' : 'border-transparent text-gray-400 hover:text-gray-200'
         }`}
       >
         <Icon className="w-4 h-4" />
@@ -525,18 +525,18 @@ function ProjectDetail({
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={onBack} className="p-2 hover:bg-gray-200 rounded-full" aria-label="Back">
+        <button onClick={onBack} className="p-2 rounded-full text-gray-200 hover:bg-white/10" aria-label="Back">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <div className="text-xs text-gray-500">Project</div>
-          <h1 className="text-2xl font-bold text-gray-800 font-mono">
+          <div className="text-xs text-gray-400">Project</div>
+          <h1 className="text-2xl font-bold text-gray-100 font-mono">
             <DecryptedText text={projectId} speed={50} />
           </h1>
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
+      <div className="flex gap-1 border-b border-white/10 mb-6 overflow-x-auto">
         <TabButton id="status" label="Status" icon={Activity} />
         <TabButton id="findings" label="Findings" icon={Lightbulb} />
         <TabButton id="discovery" label="Discovery" icon={CheckCircle} />
@@ -555,7 +555,7 @@ function ProjectDetail({
                <div className="flex gap-2">
                  <button
                     onClick={refreshStatus}
-                    className="border border-gray-300 bg-white px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2 shadow-sm active:scale-95 transition-all"
+                    className="border border-gray-300 bg-white text-gray-800 px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2 shadow-sm active:scale-95 transition-all"
                   >
                     <RefreshCw className="w-4 h-4" /> Refresh
                   </button>
@@ -600,7 +600,7 @@ function ProjectDetail({
             </div>
             
             {showIngest && (
-                <div className="bg-white border border-blue-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                <div className="bg-white text-gray-900 border border-blue-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
                     <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
                         <Globe className="w-4 h-4 text-blue-600" /> Ingest Content
                     </h3>
@@ -639,7 +639,7 @@ function ProjectDetail({
             )}
 
             {showExpand && (
-                <div className="bg-white border border-purple-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                <div className="bg-white text-gray-900 border border-purple-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
                     <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
                         <Target className="w-4 h-4 text-purple-600" /> Track New Angle
                     </h3>
@@ -685,7 +685,7 @@ function ProjectDetail({
             )}
 
             {statusData && (
-              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <div className="bg-white text-gray-900 border border-gray-200 rounded-lg p-6 shadow-sm">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h2 className="text-xl font-bold text-gray-800">{statusData.project.name}</h2>
@@ -776,7 +776,7 @@ function ProjectDetail({
                   <div className="text-[10px] font-bold text-yellow-700 uppercase mb-2">Manual Event Log</div>
                   <button
                     onClick={() => run('/vault/log', { id: projectId, type: 'NOTE', step: 0, payload: {}, conf: 1.0, source: 'portal', tags: 'dev' })}
-                    className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
+                    className="w-full border border-yellow-300 bg-white text-gray-900 px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
                   >
                     Run: vault log --type NOTE --tags dev
                   </button>
@@ -811,7 +811,7 @@ function ProjectDetail({
                     </button>
                     <button
                       onClick={() => run('/vault/watch/list', { id: projectId })}
-                      className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm"
+                      className="w-full border border-yellow-300 bg-white text-gray-900 px-3 py-2 rounded hover:bg-yellow-100 text-sm"
                     >
                       Run: vault watch list
                     </button>
@@ -853,7 +853,7 @@ function ProjectDetail({
                 <div className="border-t border-yellow-200 pt-2">
                   <button
                     onClick={() => run('/vault/watchdog/once', { id: projectId, limit: 5, dry_run: true })}
-                    className="w-full border border-yellow-300 bg-white px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
+                    className="w-full border border-yellow-300 bg-white text-gray-900 px-3 py-2 rounded hover:bg-yellow-100 text-sm text-left"
                   >
                     Run: vault watchdog --once --dry-run
                   </button>
@@ -911,7 +911,7 @@ function InsightsPanel({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+      <div className="bg-white text-gray-900 border border-gray-200 p-6 rounded-lg shadow-sm">
         <div className="flex items-center gap-2 mb-4">
            <div className="bg-yellow-100 p-2 rounded-full">
              <Lightbulb className="w-5 h-5 text-yellow-600" />
@@ -962,7 +962,7 @@ function InsightsPanel({
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
           <h3 className="font-bold text-gray-700">Key Findings ({insights.length})</h3>
           <button onClick={loadInsights} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
@@ -1038,7 +1038,7 @@ function BranchesPanel({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+      <div className="bg-white text-gray-900 border border-gray-200 p-6 rounded-lg shadow-sm">
         <div className="font-bold text-gray-800 mb-4 flex items-center gap-2">
             <GitBranch className="w-5 h-5 text-gray-500" /> 
             <span>Create Divergent Branch</span>
@@ -1067,7 +1067,7 @@ function BranchesPanel({
         </p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
            <h3 className="font-bold text-gray-700">Active Branches</h3>
            <button onClick={loadBranches} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
@@ -1196,7 +1196,7 @@ function VerificationPanel({
         </SpotlightCard>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="font-bold text-gray-700">Discovery Log</div>
           <button onClick={loadMissions} disabled={loading} className="text-gray-500 hover:text-gray-900 transition">

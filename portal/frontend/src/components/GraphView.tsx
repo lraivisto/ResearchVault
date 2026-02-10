@@ -34,9 +34,9 @@ function layout(nodes: GraphNode[], width: number, height: number): Record<strin
   place(findings, width * 0.25);
   place(artifacts, width * 0.75);
 
-  // If only one side exists, fall back to a single column.
+  // If only one side exists, fall back to a single column on the left.
   if (findings.length === 0 || artifacts.length === 0) {
-    const x = width * 0.5;
+    const x = 80; // Left margin instead of center
     place(nodes, x);
   }
 
@@ -213,7 +213,7 @@ export default function GraphView({
                       strokeWidth={3}
                     />
                     <text x={p.x + 28} y={p.y + 6} fontSize="16" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
-                      {n.label.length > 44 ? `${n.label.slice(0, 44)}…` : n.label}
+                      {n.label}
                     </text>
                   </g>
                 );

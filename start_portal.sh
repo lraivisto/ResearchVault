@@ -136,6 +136,11 @@ if [ "$SEARCH_PROVIDER_OK" != "true" ]; then
     fi
 fi
 
+# Portal defaults: turn query-search results into real findings by auto-ingesting top URLs.
+# Keep these as env vars so power users can tune it without editing code.
+export RESEARCHVAULT_WATCHDOG_INGEST_TOP="${RESEARCHVAULT_WATCHDOG_INGEST_TOP:-2}"
+export RESEARCHVAULT_VERIFY_INGEST_TOP="${RESEARCHVAULT_VERIFY_INGEST_TOP:-1}"
+
 # Dev CORS defaults (frontend may be opened as localhost or 127.0.0.1).
 export RESEARCHVAULT_PORTAL_CORS_ORIGINS="${RESEARCHVAULT_PORTAL_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
 

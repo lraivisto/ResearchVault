@@ -153,7 +153,7 @@ function EntryScreen({
       const createdId = (newId.trim() || slugify(newName)).trim();
 
       // Optional: create a watch target from the objective and run watchdog once.
-      // This makes "new project" immediately produce research output when Brave is configured.
+      // This makes "new project" immediately produce research output (via configured providers or fallbacks).
       if (autoSeed) {
         const seedQuery = (newObjective || newName || '').trim().slice(0, 200);
         if (createdId && seedQuery) {
@@ -166,8 +166,18 @@ function EntryScreen({
             setLastResult(wd);
             if (!wd.ok) {
               const err = (wd.stderr || '').toLowerCase();
-              if (err.includes('brave_api_key') || err.includes('missing api key')) {
-                setError("Auto-seed created a watch target, but Brave Search isn't configured yet. Open Diagnostics to set BRAVE_API_KEY, then run Watchdog again.");
+              if (
+                err.includes('brave_api_key') ||
+                err.includes('serper_api_key') ||
+                err.includes('searxng_base_url') ||
+                err.includes('missing api key') ||
+                err.includes('provider not configured') ||
+                err.includes('no usable search provider') ||
+                err.includes('not configured')
+              ) {
+                setError(
+                  "Auto-seed created a watch target, but search is blocked due to provider setup. Open Diagnostics to configure Brave/Serper/SearxNG (recommended), then run Watchdog again.",
+                );
               } else {
                 setError(wd.stderr || 'vault watchdog once failed');
               }
@@ -336,9 +346,9 @@ function EntryScreen({
               />
               <span>
                 Auto-seed research: create a watchdog query from the objective and run it once.
-                {!braveConfigured ? (
+                {!apiBackedSearchReady ? (
                   <span className="block text-[11px] text-amber mt-1">
-                    Brave Search not configured. Enable it in Diagnostics to make auto-seed actually search.
+                    No API-backed provider configured. Auto-seed will use best-effort fallbacks (DuckDuckGo/Wikipedia). Configure Brave/Serper/SearxNG for more stable results.
                   </span>
                 ) : null}
               </span>
@@ -556,7 +566,7 @@ function ProjectDetail({
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <div className="text-xs text-gray-400">Project</div>
+          <div className="text-xs text-gray-300">Project</div>
           <h1 className="text-2xl font-bold text-gray-100 font-mono">
             <DecryptedText text={projectId} speed={50} />
           </h1>
@@ -1142,22 +1152,43 @@ function VerificationPanel({
 }) {
   const [missions, setMissions] = useState<VerificationMission[]>([]);
   const [loading, setLoading] = useState(false);
+  const autoPlannedRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     loadMissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, refreshKey]);
 
-  async function loadMissions() {
+  async function loadMissions({ allowAutoPlan }: { allowAutoPlan?: boolean } = {}) {
     setLoading(true);
-    const res = await run('/vault/verify/list', { id: projectId, limit: 50, format: 'json' });
-    setLoading(false);
-    if (res.ok) {
+    try {
+      const res = await run('/vault/verify/list', { id: projectId, limit: 50, format: 'json' });
+      if (!res.ok) return;
+
+      let parsed: VerificationMission[] = [];
       try {
-        setMissions(JSON.parse(res.stdout));
+        parsed = JSON.parse(res.stdout) as VerificationMission[];
       } catch (e) {
         console.error(e);
       }
+      setMissions(parsed);
+
+      // Usability: when the log is empty, most users expect the system to "do something".
+      // Auto-plan once per project to avoid the "empty discovery page" trap.
+      if ((allowAutoPlan ?? true) && parsed.length === 0 && !autoPlannedRef.current[projectId]) {
+        autoPlannedRef.current[projectId] = true;
+        await run('/vault/verify/plan', { id: projectId, format: 'json' });
+        const res2 = await run('/vault/verify/list', { id: projectId, limit: 50, format: 'json' });
+        if (res2.ok) {
+          try {
+            setMissions(JSON.parse(res2.stdout) as VerificationMission[]);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1226,7 +1257,7 @@ function VerificationPanel({
       <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
           <div className="font-bold text-gray-700">Discovery Log</div>
-          <button onClick={loadMissions} disabled={loading} className="text-gray-500 hover:text-gray-900 transition">
+          <button onClick={() => loadMissions({ allowAutoPlan: false })} disabled={loading} className="text-gray-500 hover:text-gray-900 transition">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>

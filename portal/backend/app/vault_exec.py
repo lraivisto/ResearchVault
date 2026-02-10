@@ -61,6 +61,11 @@ def run_vault(
     env.setdefault("RICH_NO_COLOR", "1")
     env.setdefault("TERM", "dumb")
 
+    # Portal defaults: make watchdog/verify produce real findings by ingesting top URLs from search results.
+    # Users can override via environment variables if they want lighter/faster runs.
+    env.setdefault("RESEARCHVAULT_WATCHDOG_INGEST_TOP", "2")
+    env.setdefault("RESEARCHVAULT_VERIFY_INGEST_TOP", "1")
+
     # Force the vault subprocess to use the Portal's resolved DB.
     # This is the critical fix for "DB split" issues between CLI and Portal.
     effective = db_path or resolve_effective_db().path

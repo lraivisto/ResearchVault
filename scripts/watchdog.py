@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -52,6 +53,27 @@ def _format_search_result(result: Any, query: str, limit: int = 5) -> str:
             if desc:
                 lines.append(f"  {desc[:240]}")
     return "\n".join(lines)[:5000]
+
+def _extract_search_urls(result: Any, limit: int) -> List[str]:
+    urls: List[str] = []
+    if limit <= 0:
+        return urls
+    if not isinstance(result, dict):
+        return urls
+    web = result.get("web", {}) if isinstance(result.get("web"), dict) else {}
+    results = web.get("results", []) if isinstance(web.get("results"), list) else []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        u = (r.get("url") or "").strip()
+        if not u or not (u.startswith("http://") or u.startswith("https://")):
+            continue
+        if u in urls:
+            continue
+        urls.append(u)
+        if len(urls) >= int(limit):
+            break
+    return urls
 
 
 def run_once(
@@ -108,6 +130,11 @@ def run_once(
 
     actions: List[Dict[str, Any]] = []
     service = core.get_ingest_service()
+    ingest_top_raw = (os.getenv("RESEARCHVAULT_WATCHDOG_INGEST_TOP") or "").strip()
+    try:
+        ingest_top = max(0, min(10, int(ingest_top_raw or "0")))
+    except Exception:
+        ingest_top = 0
 
     for target in due[: max(0, int(limit))]:
         tid = target["id"]
@@ -177,6 +204,25 @@ def run_once(
                         tags="watchdog,search",
                         branch=branch_name,
                     )
+
+                    # Optional: ingest top N URLs for richer findings (portal-friendly).
+                    # Guarded by env var to avoid heavy network work in minimal CLI runs/tests.
+                    ingested_urls: List[str] = []
+                    if ingest_top > 0:
+                        for u in _extract_search_urls(cached, ingest_top):
+                            try:
+                                ir = service.ingest(
+                                    pid,
+                                    u,
+                                    extra_tags=[t for t in (tag_list + ["watchdog", "auto_ingest", "search", f"provider:{used_provider}"]) if t],
+                                    branch=branch_name,
+                                )
+                                if ir.success:
+                                    ingested_urls.append(u)
+                            except Exception:
+                                # Best-effort: ignore per-URL ingestion failures.
+                                pass
+
                     actions.append(
                         {
                             "id": tid,
@@ -186,6 +232,7 @@ def run_once(
                             "status": "ingested",
                             "provider": used_provider,
                             "source": source,
+                            "ingested_urls": ingested_urls,
                         }
                     )
                 else:

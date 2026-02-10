@@ -247,6 +247,33 @@ export default function DiagnosticsPanel({
               <div className="mt-2 text-xs text-amber font-mono">parse_error: {diag.cli.parse_error}</div>
             )}
           </div>
+
+          <div className="bg-void-surface border border-white/10 rounded-lg p-4 lg:col-span-2">
+            <div className="text-xs uppercase tracking-wider text-gray-400 font-mono mb-2">Vault Runtime</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">Search provider order</div>
+                <div className="text-xs text-gray-200 font-mono break-all">
+                  {diag.env.RESEARCHVAULT_SEARCH_PROVIDERS || 'auto (brave,serper,searxng,duckduckgo,wikipedia)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">Watchdog ingest top</div>
+                <div className="text-xs text-gray-200 font-mono">
+                  {diag.env.RESEARCHVAULT_WATCHDOG_INGEST_TOP || '2 (portal default)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">Verify ingest top</div>
+                <div className="text-xs text-gray-200 font-mono">
+                  {diag.env.RESEARCHVAULT_VERIFY_INGEST_TOP || '1 (portal default)'}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500 font-mono">
+              These knobs control how many top search results get auto-ingested into Findings (so the dashboard shows real content, not just a link list).
+            </div>
+          </div>
         </div>
       )}
 
@@ -257,7 +284,7 @@ export default function DiagnosticsPanel({
               <div className="text-xs uppercase tracking-wider text-gray-400 font-mono">Search Provider</div>
               <div className="text-lg font-semibold text-gray-100">Brave Search</div>
               <div className="text-sm text-gray-400 mt-1">
-                Live search, verification missions, and watchdog query targets require a Brave API key.
+                Recommended. In auto mode the vault will try configured providers first (Brave/Serper/SearxNG) and then fall back to best-effort providers (DuckDuckGo/Wikipedia).
               </div>
             </div>
             <div className="text-xs font-mono text-gray-400">

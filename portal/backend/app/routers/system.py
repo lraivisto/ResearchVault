@@ -310,6 +310,9 @@ def system_diagnostics():
         },
         "env": {
             "RESEARCHVAULT_DB": os.getenv("RESEARCHVAULT_DB"),
+            "RESEARCHVAULT_SEARCH_PROVIDERS": os.getenv("RESEARCHVAULT_SEARCH_PROVIDERS"),
+            "RESEARCHVAULT_WATCHDOG_INGEST_TOP": os.getenv("RESEARCHVAULT_WATCHDOG_INGEST_TOP"),
+            "RESEARCHVAULT_VERIFY_INGEST_TOP": os.getenv("RESEARCHVAULT_VERIFY_INGEST_TOP"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
             "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
             "SERPER_API_KEY_set": bool(os.getenv("SERPER_API_KEY")),

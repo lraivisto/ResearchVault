@@ -71,6 +71,38 @@ class IngestService:
         extra_tags: List[str] = None,
         branch: Optional[str] = None,
     ) -> IngestResult:
+        # Dedup by source URL per project+branch to avoid repeated ingestion when watchdog/verify
+        # loops over the same set of results. This is best-effort and only applies to connector-driven
+        # ingestion (not manual note taking).
+        branch_id = resolve_branch_id(project_id, branch)
+        conn = None
+        try:
+            src_scrubbed = scrub_data(source)
+            if src_scrubbed:
+                evidence = json.dumps({"source_url": src_scrubbed})
+                conn = db.get_connection()
+                c = conn.cursor()
+                c.execute(
+                    "SELECT id FROM findings WHERE project_id=? AND branch_id=? AND evidence=? LIMIT 1",
+                    (project_id, branch_id, evidence),
+                )
+                row = c.fetchone()
+                if row and row[0]:
+                    return IngestResult(
+                        success=True,
+                        artifact_id=row[0],
+                        metadata={"dedup": True, "source": "dedup"},
+                    )
+        except Exception:
+            # Never fail ingestion because dedup probing failed.
+            pass
+        finally:
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+
         connector = self.get_connector_for(source)
         if not connector:
             return IngestResult(success=False, error=f"No connector found for source: {source}")
@@ -84,7 +116,7 @@ class IngestService:
                 all_tags.extend([t for t in extra_tags if t not in all_tags])
             
             # Add to database (Finding table)
-            add_insight(
+            finding_id = add_insight(
                 project_id, 
                 draft.title, 
                 draft.content, 
@@ -104,7 +136,7 @@ class IngestService:
                 tags=",".join(all_tags),
                 branch=branch,
             )
-            return IngestResult(success=True, metadata={"title": draft.title, "source": draft.source})
+            return IngestResult(success=True, artifact_id=finding_id, metadata={"title": draft.title, "source": draft.source})
         except Exception as e:
             return IngestResult(success=False, error=str(e))
 
@@ -1003,6 +1035,13 @@ def run_verification_missions(
     limit: int = 5,
 ) -> List[Dict[str, Any]]:
     branch_id = resolve_branch_id(project_id, branch)
+    ingest_top_raw = (os.getenv("RESEARCHVAULT_VERIFY_INGEST_TOP") or "").strip()
+    try:
+        ingest_top = max(0, min(10, int(ingest_top_raw or "0")))
+    except Exception:
+        ingest_top = 0
+    ingest_service = get_ingest_service() if ingest_top > 0 else None
+
     conn = db.get_connection()
     c = conn.cursor()
     c.execute(
@@ -1042,6 +1081,49 @@ def run_verification_missions(
                 meta["source"] = source
             except Exception:
                 pass
+
+            if ingest_service is not None and ingest_top > 0:
+                ingested: List[Dict[str, Any]] = []
+                ingest_errors: List[Dict[str, str]] = []
+                try:
+                    web = cached.get("web", {}) if isinstance(cached, dict) else {}
+                    results_list = web.get("results", []) if isinstance(web, dict) else []
+                except Exception:
+                    results_list = []
+
+                urls: List[str] = []
+                if isinstance(results_list, list):
+                    for r in results_list:
+                        if not isinstance(r, dict):
+                            continue
+                        u = (r.get("url") or "").strip()
+                        if not u or not (u.startswith("http://") or u.startswith("https://")):
+                            continue
+                        if u in urls:
+                            continue
+                        urls.append(u)
+                        if len(urls) >= ingest_top:
+                            break
+
+                for u in urls:
+                    try:
+                        res = ingest_service.ingest(
+                            project_id,
+                            u,
+                            extra_tags=["verify", "auto_ingest", f"provider:{used_provider}"],
+                            branch=branch,
+                        )
+                        if res.success:
+                            ingested.append({"url": u, "finding_id": res.artifact_id})
+                        else:
+                            ingest_errors.append({"url": u, "error": (res.error or "ingest failed")[:400]})
+                    except Exception as e:
+                        ingest_errors.append({"url": u, "error": str(e)[:400]})
+
+                if ingested:
+                    meta["ingested"] = ingested
+                if ingest_errors:
+                    meta["ingest_errors"] = ingest_errors[:5]
 
             c.execute(
                 """UPDATE verification_missions

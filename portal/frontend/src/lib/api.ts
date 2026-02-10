@@ -104,6 +104,9 @@ export type DiagnosticsResponse = {
   backend: { python: string; platform: string; pid: number };
   env: {
     RESEARCHVAULT_DB: string | null;
+    RESEARCHVAULT_SEARCH_PROVIDERS?: string | null;
+    RESEARCHVAULT_WATCHDOG_INGEST_TOP?: string | null;
+    RESEARCHVAULT_VERIFY_INGEST_TOP?: string | null;
     RESEARCHVAULT_PORTAL_TOKEN_set: boolean;
     BRAVE_API_KEY_set: boolean;
     SERPER_API_KEY_set?: boolean;

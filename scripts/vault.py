@@ -969,13 +969,15 @@ def main():
                 console.print(table)
 
                 # Portal/automation-friendly exit codes:
-                # - exit 2: research blocked (typically missing BRAVE_API_KEY for query targets)
+                # - exit 2: research blocked (typically missing search provider config/API key)
                 # - exit 1: at least one action errored
                 # - exit 0: all actions ok/no-change/dry-run
                 statuses = [str(a.get("status") or "") for a in actions]
                 if any(s == "blocked" for s in statuses):
                     print(
-                        "Watchdog blocked: BRAVE_API_KEY is not configured. Configure it (env var or Portal Diagnostics) and retry.",
+                        "Watchdog blocked: no usable search provider is configured (missing API key/base URL). "
+                        "Configure Brave/Serper/SearxNG in the Portal Diagnostics (or set env vars), or include no-key fallbacks "
+                        "(duckduckgo,wikipedia) in RESEARCHVAULT_SEARCH_PROVIDERS, then retry.",
                         file=sys.stderr,
                     )
                     sys.exit(2)

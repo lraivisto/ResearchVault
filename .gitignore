@@ -20,3 +20,7 @@ dist-ssr/
 *.db
 *.sqlite
 *.sqlite3
+
+# Auth
+.portal_auth
+

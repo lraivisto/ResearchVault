@@ -44,12 +44,24 @@ pkill -f "run_portal.py" || true
 pkill -f "vite --port 5173" || true
 
 # Auth: backend requires RESEARCHVAULT_PORTAL_TOKEN.
-# SECURITY: We do NOT generate or print tokens here (prevents token leakage into logs/history).
+# Mirror OpenClaw: Generate if missing, persist locally.
+AUTH_FILE=".portal_auth"
 if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
-    echo "Error: RESEARCHVAULT_PORTAL_TOKEN is not set." >&2
-    echo "Set it in your shell before starting the portal, e.g.:" >&2
-    echo "  export RESEARCHVAULT_PORTAL_TOKEN='...your token...'" >&2
-    exit 1
+    if [ -f "$AUTH_FILE" ]; then
+        echo "Loading token from $AUTH_FILE..."
+        export RESEARCHVAULT_PORTAL_TOKEN=$(cat "$AUTH_FILE")
+    else
+        echo "Generating new portal token..."
+        # Use python to generate a secure token (works on most systems)
+        NEW_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(24))")
+        echo "$NEW_TOKEN" > "$AUTH_FILE"
+        chmod 600 "$AUTH_FILE"
+        export RESEARCHVAULT_PORTAL_TOKEN="$NEW_TOKEN"
+        # Ensure it's ignored by git
+        if ! grep -q "$AUTH_FILE" .gitignore 2>/dev/null; then
+            echo "$AUTH_FILE" >> .gitignore
+        fi
+    fi
 fi
 
 # Dev CORS defaults (frontend may be opened as localhost or 127.0.0.1).
@@ -126,8 +138,17 @@ FRONTEND_PID=$!
 popd >/dev/null
 
 # Wait
+PORTAL_URL="http://localhost:5173/#token=$RESEARCHVAULT_PORTAL_TOKEN"
 echo "Portal is running!"
 echo "Backend:  http://localhost:8000/docs"
 echo "Frontend: http://localhost:5173"
-echo "Open the frontend and enter your token in the login screen."
+echo "Direct:   $PORTAL_URL"
+
+# Auto-open if on macOS/Linux with display
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    open "$PORTAL_URL"
+elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$PORTAL_URL"
+fi
+
 wait

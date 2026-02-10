@@ -1252,15 +1252,30 @@ function MainApp() {
   const [lastResult, setLastResult] = useState<VaultRunResult | null>(null);
 
   useEffect(() => {
+    // 1. Check if we already have a session cookie
     apiJson('/auth/status', { method: 'GET' })
       .then(() => setAuthed(true))
-      .catch(() => setAuthed(false));
+      .catch(() => {
+        // 2. Not authed? Check URL for #token=
+        const hash = window.location.hash;
+        if (hash.startsWith('#token=')) {
+          const urlToken = hash.substring(7);
+          if (urlToken) {
+            handleLogin(urlToken);
+            // Clear the hash so it doesn't linger in the address bar
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        }
+      });
   }, []);
 
-  async function handleLogin() {
+  async function handleLogin(providedToken?: string | React.MouseEvent) {
+    const loginToken = (typeof providedToken === 'string' ? providedToken : token);
+    if (!loginToken) return;
+
     setAuthError(null);
     try {
-      await apiJson('/auth/login', { method: 'POST', body: JSON.stringify({ token }) });
+      await apiJson('/auth/login', { method: 'POST', body: JSON.stringify({ token: loginToken }) });
       setToken('');
       setAuthed(true);
     } catch (e: unknown) {
@@ -1286,7 +1301,7 @@ function MainApp() {
         <div className="bg-white p-8 rounded shadow border max-w-sm w-full space-y-4 text-gray-900">
           <h1 className="text-xl font-bold text-gray-900">ResearchVault Portal — Login</h1>
           <div className="text-sm text-gray-600">
-            Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code>. The token is never placed in URLs.
+            Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code> or use a tokenized link.
           </div>
           <input
             type="password"

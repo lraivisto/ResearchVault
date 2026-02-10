@@ -63,8 +63,8 @@ export default function GraphView({
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
 
-  const width = 1000;
-  const height = 640;
+  const width = 800;
+  const height = 600;
 
   async function refresh() {
     if (!projectId) return;
@@ -202,17 +202,17 @@ export default function GraphView({
                     className="cursor-pointer"
                     style={{ pointerEvents: 'all' }}
                   >
-                    <circle cx={p.x} cy={p.y} r={active ? 9 : 7} fill={nodeColor(n)} fillOpacity={active ? 0.9 : 0.65} />
+                    <circle cx={p.x} cy={p.y} r={active ? 16 : 12} fill={nodeColor(n)} fillOpacity={active ? 0.9 : 0.65} />
                     <circle
                       cx={p.x}
                       cy={p.y}
-                      r={active ? 14 : 12}
+                      r={active ? 24 : 20}
                       fill="none"
                       stroke={nodeColor(n)}
                       strokeOpacity={active ? 0.35 : 0.15}
-                      strokeWidth={2}
+                      strokeWidth={3}
                     />
-                    <text x={p.x + 16} y={p.y + 4} fontSize="11" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
+                    <text x={p.x + 28} y={p.y + 6} fontSize="16" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
                       {n.label.length > 44 ? `${n.label.slice(0, 44)}…` : n.label}
                     </text>
                   </g>

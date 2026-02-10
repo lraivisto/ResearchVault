@@ -540,3 +540,19 @@ def vault_synthesize(req: SynthesizeRequest):
     if req.branch:
         args += ["--branch", req.branch]
     return _run(args, timeout_s=120)
+
+
+class SummaryRequest(BaseModel):
+    id: str
+    branch: Optional[str] = None
+    format: Literal["rich", "json"] = "json"
+
+
+@router.post("/summary")
+def vault_summary(req: SummaryRequest):
+    """Generate an AI summary of project findings."""
+    args = ["summary", "--id", req.id]
+    if req.branch:
+        args += ["--branch", req.branch]
+    args += ["--format", req.format]
+    return _run(args)

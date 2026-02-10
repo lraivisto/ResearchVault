@@ -196,7 +196,12 @@ export default function GraphView({
                 if (!p) return null;
                 const active = selected?.id === n.id;
                 return (
-                  <g key={n.id} onClick={() => setSelected(n)} className="cursor-pointer">
+                  <g
+                    key={n.id}
+                    onClick={() => setSelected(n)}
+                    className="cursor-pointer"
+                    style={{ pointerEvents: 'all' }}
+                  >
                     <circle cx={p.x} cy={p.y} r={active ? 9 : 7} fill={nodeColor(n)} fillOpacity={active ? 0.9 : 0.65} />
                     <circle
                       cx={p.x}
@@ -207,7 +212,7 @@ export default function GraphView({
                       strokeOpacity={active ? 0.35 : 0.15}
                       strokeWidth={2}
                     />
-                    <text x={p.x + 16} y={p.y + 4} fontSize="11" fill={active ? '#fff' : '#cbd5e1'}>
+                    <text x={p.x + 16} y={p.y + 4} fontSize="11" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
                       {n.label.length > 44 ? `${n.label.slice(0, 44)}…` : n.label}
                     </text>
                   </g>

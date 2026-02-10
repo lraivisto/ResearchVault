@@ -89,17 +89,29 @@ def run_vault(
 
     argv = [sys.executable, "-m", "scripts.vault", *args]
 
-    proc = subprocess.run(
-        argv,
-        cwd=str(root),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-    )
-
-    stdout = proc.stdout or ""
-    stderr = proc.stderr or ""
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
+        exit_code = int(proc.returncode)
+    except subprocess.TimeoutExpired as e:
+        stdout = e.stdout.decode("utf-8", "ignore") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stderr = (
+            (e.stderr.decode("utf-8", "ignore") if isinstance(e.stderr, bytes) else (e.stderr or ""))
+            + f"\n\nERROR: Subprocess timed out after {timeout_s}s"
+        )
+        exit_code = 124  # Standard timeout exit code
+    except Exception as e:
+        stdout = ""
+        stderr = f"ERROR: Subprocess execution failed: {e}"
+        exit_code = 1
 
     truncated = False
     total = len(stdout.encode("utf-8", errors="ignore")) + len(stderr.encode("utf-8", errors="ignore"))
@@ -112,7 +124,7 @@ def run_vault(
 
     return VaultRunResult(
         argv=argv,
-        exit_code=int(proc.returncode),
+        exit_code=exit_code,
         stdout=scrub_text(stdout),
         stderr=scrub_text(stderr),
         truncated=truncated,

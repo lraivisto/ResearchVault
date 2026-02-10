@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle,
+  Copy,
+  Download,
   FolderPlus,
   FolderSearch,
   GitBranch,
@@ -354,16 +356,16 @@ function EntryScreen({
               </span>
             </label>
 
-             <button 
-                type="button" 
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="text-xs text-gray-500 hover:text-gray-800 text-left underline"
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-xs text-gray-500 hover:text-gray-800 text-left underline"
             >
-                {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings (ID, Priority)'}
+              {showAdvanced ? 'Hide Advanced Settings' : 'Show Advanced Settings (ID, Priority)'}
             </button>
 
             {showAdvanced && (
-                <>
+              <>
                 <input
                   className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-900 placeholder:text-gray-400"
                   placeholder="Project ID (Optional - Auto-generated)"
@@ -377,7 +379,7 @@ function EntryScreen({
                   value={newPriority}
                   onChange={(e) => setNewPriority(parseInt(e.target.value || '0', 10))}
                 />
-                </>
+              </>
             )}
 
             <div className="flex justify-end gap-2">
@@ -436,15 +438,14 @@ function EntryScreen({
                 <td className="p-3 text-sm text-gray-700 truncate max-w-xs">{p.objective}</td>
                 <td className="p-3 text-sm">
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      p.status === 'active'
-                        ? 'bg-green-100 text-green-800'
-                        : p.status === 'completed'
-                          ? 'bg-blue-100 text-blue-800'
-                          : p.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800'
-                    }`}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${p.status === 'active'
+                      ? 'bg-green-100 text-green-800'
+                      : p.status === 'completed'
+                        ? 'bg-blue-100 text-blue-800'
+                        : p.status === 'failed'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
                   >
                     {p.status}
                   </span>
@@ -498,6 +499,12 @@ function ProjectDetail({
   const [expandQuery, setExpandQuery] = useState('');
   const [isExpanding, setIsExpanding] = useState(false);
 
+  // Export State
+  const [showExport, setShowExport] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'json' | 'markdown'>('markdown');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportContent, setExportContent] = useState<string | null>(null);
+
   // Dev Mode inputs (low-level commands)
   const [watchType, setWatchType] = useState<'url' | 'query'>('url');
   const [watchTarget, setWatchTarget] = useState('');
@@ -549,9 +556,8 @@ function ProjectDetail({
     return (
       <button
         onClick={() => setTab(id)}
-        className={`flex items-center gap-2 px-4 py-2 border-b-2 transition whitespace-nowrap ${
-          active ? 'border-cyan text-cyan' : 'border-transparent text-gray-400 hover:text-gray-200'
-        }`}
+        className={`flex items-center gap-2 px-4 py-2 border-b-2 transition whitespace-nowrap ${active ? 'border-cyan text-cyan' : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
       >
         <Icon className="w-4 h-4" />
         <span className="font-medium">{label}</span>
@@ -589,136 +595,235 @@ function ProjectDetail({
               </div>
             )}
             <div className="flex justify-between items-start flex-wrap gap-2">
-               <div className="flex gap-2">
-                 <button
-                    onClick={refreshStatus}
-                    className="border border-gray-300 bg-white text-gray-800 px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2 shadow-sm active:scale-95 transition-all"
-                  >
-                    <RefreshCw className="w-4 h-4" /> Refresh
-                  </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={refreshStatus}
+                  className="border border-gray-300 bg-white text-gray-800 px-4 py-2 rounded hover:bg-gray-50 text-sm flex items-center gap-2 shadow-sm active:scale-95 transition-all"
+                >
+                  <RefreshCw className="w-4 h-4" /> Refresh
+                </button>
 
-                 <button
+                <button
+                  onClick={async () => {
+                    setActionError(null);
+                    setIsWatchdogging(true);
+                    try {
+                      const wd = await run('/vault/watchdog/once', { id: projectId, limit: 5, dry_run: false });
+                      if (!wd.ok) {
+                        throw new Error(wd.stderr || 'vault watchdog once failed');
+                      }
+                      await refreshStatus();
+                    } catch (e: unknown) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      setActionError(msg);
+                    } finally {
+                      setIsWatchdogging(false);
+                    }
+                  }}
+                  className="border border-cyan/40 bg-cyan-dim text-cyan px-4 py-2 rounded hover:border-cyan/70 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(0,240,255,0.18)] transition-all disabled:opacity-50"
+                  disabled={isWatchdogging}
+                >
+                  <Play className={`w-4 h-4 ${isWatchdogging ? 'animate-pulse' : ''}`} /> {isWatchdogging ? 'Researching…' : 'Run Watchdog Now'}
+                </button>
+
+                <button
+                  onClick={() => setShowIngest(!showIngest)}
+                  className="border border-blue-300 bg-blue-50 text-blue-700 px-4 py-2 rounded hover:bg-blue-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(37,99,235,0.2)] transition-all"
+                >
+                  <Globe className="w-4 h-4" /> Ingest from Web
+                </button>
+
+                <button
+                  onClick={() => setShowExpand(!showExpand)}
+                  className="border border-purple-300 bg-purple-50 text-purple-700 px-4 py-2 rounded hover:bg-purple-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(147,51,234,0.2)] transition-all"
+                >
+                  <Target className="w-4 h-4" /> Expand Mission
+                </button>
+
+                <button
+                  onClick={() => setShowExport(!showExport)}
+                  className="border border-green-300 bg-green-50 text-green-700 px-4 py-2 rounded hover:bg-green-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(34,197,94,0.2)] transition-all"
+                >
+                  <Download className="w-4 h-4" /> Export
+                </button>
+              </div>
+            </div>
+
+            {showIngest && (
+              <div className="bg-white text-gray-900 border border-blue-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-600" /> Ingest Content
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    value={ingestUrl}
+                    onChange={e => setIngestUrl(e.target.value)}
+                    className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
+                    placeholder="Paste URL (e.g. https://arxiv.org/...)"
+                  />
+                  <button
                     onClick={async () => {
                       setActionError(null);
-                      setIsWatchdogging(true);
+                      setIsIngesting(true);
                       try {
-                        const wd = await run('/vault/watchdog/once', { id: projectId, limit: 5, dry_run: false });
-                        if (!wd.ok) {
-                          throw new Error(wd.stderr || 'vault watchdog once failed');
-                        }
-                        await refreshStatus();
+                        const r = await run('/vault/scuttle', { id: projectId, url: ingestUrl });
+                        if (!r.ok) throw new Error(r.stderr || 'vault scuttle failed');
                       } catch (e: unknown) {
-                        const msg = e instanceof Error ? e.message : String(e);
-                        setActionError(msg);
-                      } finally {
-                        setIsWatchdogging(false);
+                        setActionError(e instanceof Error ? e.message : String(e));
                       }
+                      setIngestUrl('');
+                      setIsIngesting(false);
+                      setShowIngest(false);
+                      await refreshStatus();
                     }}
-                    className="border border-cyan/40 bg-cyan-dim text-cyan px-4 py-2 rounded hover:border-cyan/70 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(0,240,255,0.18)] transition-all disabled:opacity-50"
-                    disabled={isWatchdogging}
-                 >
-                    <Play className={`w-4 h-4 ${isWatchdogging ? 'animate-pulse' : ''}`} /> {isWatchdogging ? 'Researching…' : 'Run Watchdog Now'}
-                 </button>
-                 
-                 <button 
-                    onClick={() => setShowIngest(!showIngest)}
-                    className="border border-blue-300 bg-blue-50 text-blue-700 px-4 py-2 rounded hover:bg-blue-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(37,99,235,0.2)] transition-all"
-                 >
-                    <Globe className="w-4 h-4" /> Ingest from Web
-                 </button>
-
-                 <button 
-                    onClick={() => setShowExpand(!showExpand)}
-                    className="border border-purple-300 bg-purple-50 text-purple-700 px-4 py-2 rounded hover:bg-purple-100 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(147,51,234,0.2)] transition-all"
-                 >
-                    <Target className="w-4 h-4" /> Expand Mission
-                 </button>
-               </div>
-            </div>
-            
-            {showIngest && (
-                <div className="bg-white text-gray-900 border border-blue-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
-                    <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-blue-600" /> Ingest Content
-                    </h3>
-                    <div className="flex gap-2">
-                        <input 
-                            value={ingestUrl}
-                            onChange={e => setIngestUrl(e.target.value)}
-                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
-                            placeholder="Paste URL (e.g. https://arxiv.org/...)"
-                        />
-                        <button
-                            onClick={async () => {
-                                setActionError(null);
-                                setIsIngesting(true);
-                                try {
-                                  const r = await run('/vault/scuttle', { id: projectId, url: ingestUrl });
-                                  if (!r.ok) throw new Error(r.stderr || 'vault scuttle failed');
-                                } catch (e: unknown) {
-                                  setActionError(e instanceof Error ? e.message : String(e));
-                                }
-                                setIngestUrl('');
-                                setIsIngesting(false);
-                                setShowIngest(false);
-                                await refreshStatus();
-                            }}
-                            disabled={!ingestUrl || isIngesting}
-                            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50 font-semibold"
-                        >
-                            {isIngesting ? 'Ingesting...' : 'Run Ingest'}
-                        </button>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">
-                        Extracts text, summarizes, and tags content automatically.
-                    </div>
+                    disabled={!ingestUrl || isIngesting}
+                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50 font-semibold"
+                  >
+                    {isIngesting ? 'Ingesting...' : 'Run Ingest'}
+                  </button>
                 </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Extracts text, summarizes, and tags content automatically.
+                </div>
+              </div>
+            )}
+
+            {showExport && (
+              <div className="bg-white text-gray-900 border border-green-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <Download className="w-4 h-4 text-green-600" /> Export Research Data
+                </h3>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Format</label>
+                    <div className="flex gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={exportFormat === 'markdown'}
+                          onChange={() => setExportFormat('markdown')}
+                          className="text-green-600"
+                        />
+                        <span className="text-sm text-gray-700">Markdown (.md)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={exportFormat === 'json'}
+                          onChange={() => setExportFormat('json')}
+                          className="text-green-600"
+                        />
+                        <span className="text-sm text-gray-700">JSON (.json)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        setIsExporting(true);
+                        setExportContent(null);
+                        try {
+                          const r = await run('/vault/export', { id: projectId, format: exportFormat });
+                          if (r.ok && r.stdout) {
+                            setExportContent(r.stdout);
+                            // Auto-download
+                            const blob = new Blob([r.stdout], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `${projectId}_export.${exportFormat === 'json' ? 'json' : 'md'}`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          } else {
+                            throw new Error(r.stderr || 'Export failed');
+                          }
+                        } catch (e: unknown) {
+                          setActionError(e instanceof Error ? e.message : String(e));
+                        }
+                        setIsExporting(false);
+                      }}
+                      disabled={isExporting}
+                      className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 disabled:opacity-50 font-semibold flex items-center gap-2"
+                    >
+                      {isExporting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Exporting...</> : <><Download className="w-4 h-4" /> Download</>}
+                    </button>
+
+                    {exportContent && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(exportContent);
+                        }}
+                        className="border border-green-600 text-green-600 px-4 py-2 rounded text-sm hover:bg-green-50 font-semibold flex items-center gap-2"
+                      >
+                        <Copy className="w-4 h-4" /> Copy to Clipboard
+                      </button>
+                    )}
+                  </div>
+
+                  {exportContent && (
+                    <div className="border-t border-gray-200 pt-3">
+                      <div className="text-xs font-bold text-gray-500 uppercase mb-1">Preview (first 500 chars)</div>
+                      <pre className="bg-gray-50 p-3 rounded text-xs font-mono text-gray-700 overflow-auto max-h-32 border border-gray-200">
+                        {exportContent.substring(0, 500)}{exportContent.length > 500 ? '...' : ''}
+                      </pre>
+                    </div>
+                  )}
+
+                  <div className="text-xs text-gray-500">
+                    Export all findings, events, and research data for this project.
+                  </div>
+                </div>
+              </div>
             )}
 
             {showExpand && (
-                <div className="bg-white text-gray-900 border border-purple-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
-                    <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                        <Target className="w-4 h-4 text-purple-600" /> Track New Angle
-                    </h3>
-                    <div className="flex gap-2">
-                        <input 
-                            value={expandQuery}
-                            onChange={e => setExpandQuery(e.target.value)}
-                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder:text-gray-400"
-                            placeholder="What should we watch? (e.g. 'competitor release notes')"
-                        />
-                        <button
-                            onClick={async () => {
-                                setActionError(null);
-                                setIsExpanding(true);
-                                try {
-                                  const a = await run('/vault/watch/add', { 
-                                    id: projectId, 
-                                    type: 'query', 
-                                    target: expandQuery, 
-                                    interval: 3600 
-                                  });
-                                  if (!a.ok) throw new Error(a.stderr || 'vault watch add failed');
-                                  const wd = await run('/vault/watchdog/once', { id: projectId, limit: 3, dry_run: false });
-                                  if (!wd.ok) throw new Error(wd.stderr || 'vault watchdog once failed');
-                                } catch (e: unknown) {
-                                  setActionError(e instanceof Error ? e.message : String(e));
-                                }
-                                setExpandQuery('');
-                                setIsExpanding(false);
-                                setShowExpand(false);
-                                await refreshStatus();
-                            }}
-                            disabled={!expandQuery || isExpanding}
-                            className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:opacity-50 font-semibold"
-                        >
-                            {isExpanding ? 'Adding...' : 'Start Tracking'}
-                        </button>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">
-                        The Vault will periodically search for this topic and alert you to new findings.
-                    </div>
+              <div className="bg-white text-gray-900 border border-purple-200 p-4 rounded shadow-lg animate-in fade-in zoom-in duration-300">
+                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-purple-600" /> Track New Angle
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    value={expandQuery}
+                    onChange={e => setExpandQuery(e.target.value)}
+                    className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder:text-gray-400"
+                    placeholder="What should we watch? (e.g. 'competitor release notes')"
+                  />
+                  <button
+                    onClick={async () => {
+                      setActionError(null);
+                      setIsExpanding(true);
+                      try {
+                        const a = await run('/vault/watch/add', {
+                          id: projectId,
+                          type: 'query',
+                          target: expandQuery,
+                          interval: 3600
+                        });
+                        if (!a.ok) throw new Error(a.stderr || 'vault watch add failed');
+                        const wd = await run('/vault/watchdog/once', { id: projectId, limit: 3, dry_run: false });
+                        if (!wd.ok) throw new Error(wd.stderr || 'vault watchdog once failed');
+                      } catch (e: unknown) {
+                        setActionError(e instanceof Error ? e.message : String(e));
+                      }
+                      setExpandQuery('');
+                      setIsExpanding(false);
+                      setShowExpand(false);
+                      await refreshStatus();
+                    }}
+                    disabled={!expandQuery || isExpanding}
+                    className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:opacity-50 font-semibold"
+                  >
+                    {isExpanding ? 'Adding...' : 'Start Tracking'}
+                  </button>
                 </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  The Vault will periodically search for this topic and alert you to new findings.
+                </div>
+              </div>
             )}
 
             {statusData && (
@@ -728,75 +833,74 @@ function ProjectDetail({
                     <h2 className="text-xl font-bold text-gray-800">{statusData.project.name}</h2>
                     <div className="text-sm text-gray-500 font-mono">{statusData.project.id}</div>
                   </div>
-                   <span
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      statusData.project.status === 'active'
-                        ? 'bg-green-100 text-green-800'
-                        : statusData.project.status === 'completed'
-                          ? 'bg-blue-100 text-blue-800'
-                          : statusData.project.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800'
-                    }`}
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${statusData.project.status === 'active'
+                      ? 'bg-green-100 text-green-800'
+                      : statusData.project.status === 'completed'
+                        ? 'bg-blue-100 text-blue-800'
+                        : statusData.project.status === 'failed'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
                   >
                     {statusData.project.status.toUpperCase()}
                   </span>
                 </div>
-                
+
                 <div className="mb-6">
                   <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Objective</div>
                   <p className="text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{statusData.project.objective}</p>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                   <SpotlightCard className="bg-blue-50 rounded border border-blue-100" spotlightColor="rgba(59, 130, 246, 0.15)">
-                      <div className="p-3">
-                        <div className="text-xs text-blue-600 font-bold uppercase">Priority</div>
-                        <div className="text-2xl font-mono text-blue-900">{statusData.project.priority}</div>
-                      </div>
-                   </SpotlightCard>
-                   <SpotlightCard className="bg-purple-50 rounded border border-purple-100" spotlightColor="rgba(147, 51, 234, 0.15)">
-                      <div className="p-3">
-                        <div className="text-xs text-purple-600 font-bold uppercase">Findings</div>
-                        <div className="text-2xl font-mono text-purple-900">{statusData.insights.length}</div>
-                      </div>
-                   </SpotlightCard>
-                   <SpotlightCard className="bg-orange-50 rounded border border-orange-100" spotlightColor="rgba(249, 115, 22, 0.15)">
-                      <div className="p-3">
-                        <div className="text-xs text-orange-600 font-bold uppercase">Events</div>
-                        <div className="text-2xl font-mono text-orange-900">{statusData.recent_events.length}</div>
-                      </div>
-                   </SpotlightCard>
+                  <SpotlightCard className="bg-blue-50 rounded border border-blue-100" spotlightColor="rgba(59, 130, 246, 0.15)">
+                    <div className="p-3">
+                      <div className="text-xs text-blue-600 font-bold uppercase">Priority</div>
+                      <div className="text-2xl font-mono text-blue-900">{statusData.project.priority}</div>
+                    </div>
+                  </SpotlightCard>
+                  <SpotlightCard className="bg-purple-50 rounded border border-purple-100" spotlightColor="rgba(147, 51, 234, 0.15)">
+                    <div className="p-3">
+                      <div className="text-xs text-purple-600 font-bold uppercase">Findings</div>
+                      <div className="text-2xl font-mono text-purple-900">{statusData.insights.length}</div>
+                    </div>
+                  </SpotlightCard>
+                  <SpotlightCard className="bg-orange-50 rounded border border-orange-100" spotlightColor="rgba(249, 115, 22, 0.15)">
+                    <div className="p-3">
+                      <div className="text-xs text-orange-600 font-bold uppercase">Events</div>
+                      <div className="text-2xl font-mono text-orange-900">{statusData.recent_events.length}</div>
+                    </div>
+                  </SpotlightCard>
                 </div>
 
                 <div>
-                   <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Recent Events</div>
-                   <div className="overflow-x-auto">
-                     <table className="w-full text-left text-sm">
-                       <thead className="bg-gray-50 border-b border-gray-200">
-                         <tr>
-                           <th className="p-2 text-gray-600">Time</th>
-                           <th className="p-2 text-gray-600">Source</th>
-                           <th className="p-2 text-gray-600">Type</th>
-                           <th className="p-2 text-gray-600">Conf</th>
-                           <th className="p-2 text-gray-600">Data</th>
-                         </tr>
-                       </thead>
-                       <tbody className="divide-y divide-gray-100">
-                         {statusData.recent_events.map((e, i) => (
-                           <tr key={i} className="hover:bg-gray-50">
-                             <td className="p-2 font-mono text-xs text-gray-500">{new Date(e.timestamp).toLocaleTimeString()}</td>
-                             <td className="p-2 text-cyan-700">{e.source}</td>
-                             <td className="p-2 font-medium">{e.type}</td>
-                             <td className={`p-2 font-mono ${e.confidence > 0.8 ? 'text-green-600' : e.confidence < 0.5 ? 'text-red-500' : 'text-yellow-600'}`}>
-                               {e.confidence.toFixed(2)}
-                             </td>
-                             <td className="p-2 text-gray-600 max-w-xs truncate" title={e.payload}>{e.payload.substring(0, 100)}</td>
-                           </tr>
-                         ))}
-                       </tbody>
-                     </table>
-                   </div>
+                  <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Recent Events</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="p-2 text-gray-600">Time</th>
+                          <th className="p-2 text-gray-600">Source</th>
+                          <th className="p-2 text-gray-600">Type</th>
+                          <th className="p-2 text-gray-600">Conf</th>
+                          <th className="p-2 text-gray-600">Data</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {statusData.recent_events.map((e, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="p-2 font-mono text-xs text-gray-500">{new Date(e.timestamp).toLocaleTimeString()}</td>
+                            <td className="p-2 text-cyan-700">{e.source}</td>
+                            <td className="p-2 font-medium">{e.type}</td>
+                            <td className={`p-2 font-mono ${e.confidence > 0.8 ? 'text-green-600' : e.confidence < 0.5 ? 'text-red-500' : 'text-yellow-600'}`}>
+                              {e.confidence.toFixed(2)}
+                            </td>
+                            <td className="p-2 text-gray-600 max-w-xs truncate" title={e.payload}>{e.payload.substring(0, 100)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -950,13 +1054,13 @@ function InsightsPanel({
     <div className="space-y-6">
       <div className="bg-white text-gray-900 border border-gray-200 p-6 rounded-lg shadow-sm">
         <div className="flex items-center gap-2 mb-4">
-           <div className="bg-yellow-100 p-2 rounded-full">
-             <Lightbulb className="w-5 h-5 text-yellow-600" />
-           </div>
-           <div>
-             <h3 className="font-bold text-gray-800">New Finding</h3>
-             <div className="text-xs text-gray-500">Log a key finding or observation</div>
-           </div>
+          <div className="bg-yellow-100 p-2 rounded-full">
+            <Lightbulb className="w-5 h-5 text-yellow-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800">New Finding</h3>
+            <div className="text-xs text-gray-500">Log a key finding or observation</div>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -979,7 +1083,7 @@ function InsightsPanel({
             />
           </div>
         </div>
-        
+
         <div className="flex justify-end mt-4">
           <button
             disabled={!title.trim() || !content.trim() || isAdding}
@@ -1008,34 +1112,34 @@ function InsightsPanel({
         </div>
         <div className="divide-y divide-gray-100">
           {insights.length === 0 && (
-             <div className="p-12 text-center">
-               <div className="text-gray-300 mb-2"><Lightbulb className="w-12 h-12 mx-auto" /></div>
-               <div className="text-gray-500 font-medium">No findings yet</div>
-               <div className="text-gray-400 text-sm">Add your first finding above.</div>
-             </div>
+            <div className="p-12 text-center">
+              <div className="text-gray-300 mb-2"><Lightbulb className="w-12 h-12 mx-auto" /></div>
+              <div className="text-gray-500 font-medium">No findings yet</div>
+              <div className="text-gray-400 text-sm">Add your first finding above.</div>
+            </div>
           )}
           {insights.map((insight, idx) => (
             <div key={idx} className="p-6 hover:bg-gray-50 transition group">
               <div className="flex justify-between items-start mb-2">
                 <h4 className="font-bold text-gray-900 text-lg leading-tight">{insight.title}</h4>
                 <div className="flex items-center gap-2 shrink-0">
-                   <span className="text-xs text-gray-400 font-mono">{new Date(insight.timestamp).toLocaleDateString()}</span>
-                   <span className={`text-xs font-bold px-2 py-0.5 rounded ${insight.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                     {(insight.confidence * 100).toFixed(0)}% Conf
-                   </span>
+                  <span className="text-xs text-gray-400 font-mono">{new Date(insight.timestamp).toLocaleDateString()}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${insight.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {(insight.confidence * 100).toFixed(0)}% Conf
+                  </span>
                 </div>
               </div>
               <div className="prose prose-sm max-w-none text-gray-700">
                 <p className="whitespace-pre-wrap">{insight.content}</p>
               </div>
               {insight.tags && (
-                 <div className="flex gap-2 mt-3 flex-wrap">
-                    {insight.tags.split(',').map(tag => (
-                       <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full border border-gray-200">
-                          #{tag.trim()}
-                       </span>
-                    ))}
-                 </div>
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {insight.tags.split(',').map(tag => (
+                    <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full border border-gray-200">
+                      #{tag.trim()}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           ))}
@@ -1077,8 +1181,8 @@ function BranchesPanel({
     <div className="space-y-6">
       <div className="bg-white text-gray-900 border border-gray-200 p-6 rounded-lg shadow-sm">
         <div className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <GitBranch className="w-5 h-5 text-gray-500" /> 
-            <span>Create Divergent Branch</span>
+          <GitBranch className="w-5 h-5 text-gray-500" />
+          <span>Create Divergent Branch</span>
         </div>
         <div className="flex gap-2">
           <input
@@ -1106,10 +1210,10 @@ function BranchesPanel({
 
       <div className="bg-white text-gray-900 border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-           <h3 className="font-bold text-gray-700">Active Branches</h3>
-           <button onClick={loadBranches} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
-             <RefreshCw className="w-4 h-4" />
-           </button>
+          <h3 className="font-bold text-gray-700">Active Branches</h3>
+          <button onClick={loadBranches} className="text-gray-500 hover:text-gray-900 transition" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
         <table className="w-full text-left text-sm">
           <thead className="bg-white border-b border-gray-100">
@@ -1125,14 +1229,14 @@ function BranchesPanel({
               <tr key={b.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 font-mono text-blue-700 font-bold">{b.name}</td>
                 <td className="px-6 py-4">
-                   <span className={`px-2 py-0.5 rounded text-xs uppercase font-bold ${b.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{b.status}</span>
+                  <span className={`px-2 py-0.5 rounded text-xs uppercase font-bold ${b.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{b.status}</span>
                 </td>
                 <td className="px-6 py-4 text-gray-600 italic">{b.hypothesis || '-'}</td>
                 <td className="px-6 py-4 text-gray-400 font-mono text-xs">{b.parent_id || 'root'}</td>
               </tr>
             ))}
             {branches.length === 0 && (
-                <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No divergent branches found.</td></tr>
+              <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No divergent branches found.</td></tr>
             )}
           </tbody>
         </table>
@@ -1234,23 +1338,23 @@ function VerificationPanel({
         </button>
 
         <SpotlightCard className="bg-gray-50 border border-gray-200 rounded-lg flex flex-col justify-center gap-2" spotlightColor="rgba(0,0,0,0.05)">
-           <div className="p-6">
-             <div className="text-sm font-bold text-gray-600 uppercase tracking-wider text-center mb-2">Discovery Overview</div>
-             <div className="flex justify-between px-4">
-                <div className="text-center">
-                   <div className="text-2xl font-mono text-blue-600">{missions.filter(m => m.status === 'open').length}</div>
-                   <div className="text-[10px] text-gray-500 font-bold uppercase">Open</div>
-                </div>
-                <div className="text-center">
-                   <div className="text-2xl font-mono text-green-600">{missions.filter(m => m.status === 'done').length}</div>
-                   <div className="text-[10px] text-gray-500 font-bold uppercase">Done</div>
-                </div>
-                <div className="text-center">
-                   <div className="text-2xl font-mono text-red-600">{missions.filter(m => m.status === 'blocked').length}</div>
-                   <div className="text-[10px] text-gray-500 font-bold uppercase">Blocked</div>
-                </div>
-             </div>
-           </div>
+          <div className="p-6">
+            <div className="text-sm font-bold text-gray-600 uppercase tracking-wider text-center mb-2">Discovery Overview</div>
+            <div className="flex justify-between px-4">
+              <div className="text-center">
+                <div className="text-2xl font-mono text-blue-600">{missions.filter(m => m.status === 'open').length}</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Open</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-mono text-green-600">{missions.filter(m => m.status === 'done').length}</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Done</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-mono text-red-600">{missions.filter(m => m.status === 'blocked').length}</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Blocked</div>
+              </div>
+            </div>
+          </div>
         </SpotlightCard>
       </div>
 
@@ -1274,14 +1378,13 @@ function VerificationPanel({
             {missions.map((m) => (
               <tr key={m.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4">
-                   <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                     m.status === 'done' ? 'bg-green-100 text-green-800' :
-                     m.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                     m.status === 'open' ? 'bg-blue-100 text-blue-800' :
-                     'bg-gray-100 text-gray-800'
-                   }`}>
-                     {m.status}
-                   </span>
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${m.status === 'done' ? 'bg-green-100 text-green-800' :
+                    m.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      m.status === 'open' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                    }`}>
+                    {m.status}
+                  </span>
                 </td>
                 <td className="px-6 py-4 text-gray-800 font-medium max-w-xs truncate" title={m.finding_title}>
                   {m.finding_title || 'Unknown Finding'}
@@ -1293,7 +1396,7 @@ function VerificationPanel({
               </tr>
             ))}
             {missions.length === 0 && (
-               <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No missions found. Click 'Discover Links' to start.</td></tr>
+              <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No missions found. Click 'Discover Links' to start.</td></tr>
             )}
           </tbody>
         </table>
@@ -1519,11 +1622,10 @@ function MainApp() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setDevMode((v) => !v)}
-            className={`text-xs px-2 py-1 rounded border ${
-              devMode
-                ? 'bg-yellow-100 border-yellow-400 text-yellow-900'
-                : 'bg-void border-white/10 text-gray-300 hover:text-white hover:border-white/20'
-            }`}
+            className={`text-xs px-2 py-1 rounded border ${devMode
+              ? 'bg-yellow-100 border-yellow-400 text-yellow-900'
+              : 'bg-void border-white/10 text-gray-300 hover:text-white hover:border-white/20'
+              }`}
           >
             {devMode ? 'Dev Mode ON' : 'Dev Mode OFF'}
           </button>

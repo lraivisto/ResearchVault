@@ -5,12 +5,18 @@ import os
 import re
 import uuid
 import requests
+import html as _html
+from urllib.parse import urlparse, parse_qs, unquote
 from typing import List, Optional, Dict, Any, Type, Tuple
 from datetime import datetime, timedelta
 import scripts.db as db
 from scripts.scuttle import Connector, ArtifactDraft, IngestResult
 
 class MissingAPIKeyError(Exception):
+    pass
+
+class ProviderNotConfiguredError(Exception):
+    """Raised when a search provider is selected but lacks required non-secret config (e.g. base URL)."""
     pass
 
 def scrub_data(data: Any) -> Any:
@@ -229,13 +235,215 @@ def perform_brave_search(query):
         "Accept": "application/json"
     }
     params = {"q": query}
-    
-    response = requests.get(url, headers=headers, params=params)
-    response.raise_for_status()
-    return response.json()
 
-def log_search(query, result):
-    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
+    s = requests.Session()
+    s.trust_env = False
+    response = s.get(url, headers=headers, params=params, timeout=20)
+    response.raise_for_status()
+    data = response.json()
+    # Attach minimal provider metadata for downstream tooling.
+    if isinstance(data, dict) and "provider" not in data:
+        data["provider"] = "brave"
+    return data
+
+
+def perform_serper_search(query: str) -> dict:
+    api_key = os.environ.get("SERPER_API_KEY")
+    if not api_key:
+        raise MissingAPIKeyError("SERPER_API_KEY not found in environment variables.")
+
+    url = "https://google.serper.dev/search"
+    headers = {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    payload = {"q": query}
+
+    s = requests.Session()
+    s.trust_env = False
+    resp = s.post(url, headers=headers, json=payload, timeout=25)
+    resp.raise_for_status()
+    raw = resp.json()
+
+    results: list[dict[str, str]] = []
+    organic = raw.get("organic", []) if isinstance(raw, dict) else []
+    if isinstance(organic, list):
+        for r in organic:
+            if not isinstance(r, dict):
+                continue
+            link = (r.get("link") or "").strip()
+            title = (r.get("title") or "").strip()
+            snippet = (r.get("snippet") or "").strip()
+            if link and title:
+                results.append({"url": link, "title": title, "description": snippet})
+
+    return {"provider": "serper", "web": {"results": results}, "raw": raw}
+
+
+def perform_searxng_search(query: str) -> dict:
+    base = (os.environ.get("SEARXNG_BASE_URL") or "").strip()
+    if not base:
+        raise ProviderNotConfiguredError("SEARXNG_BASE_URL not configured.")
+
+    url = base.rstrip("/") + "/search"
+    params = {"q": query, "format": "json"}
+
+    s = requests.Session()
+    s.trust_env = False
+    resp = s.get(url, params=params, timeout=25)
+    resp.raise_for_status()
+    raw = resp.json()
+
+    results: list[dict[str, str]] = []
+    rows = raw.get("results", []) if isinstance(raw, dict) else []
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            link = (r.get("url") or "").strip()
+            title = (r.get("title") or "").strip()
+            content = (r.get("content") or r.get("description") or "").strip()
+            if link and title:
+                # Best-effort: strip HTML tags from searx snippet.
+                content = re.sub(r"<[^>]+>", "", content)
+                results.append({"url": link, "title": title, "description": content})
+
+    return {"provider": "searxng", "web": {"results": results}, "raw": raw}
+
+
+def _ddg_decode_url(href: str) -> str:
+    h = (href or "").strip()
+    if not h:
+        return ""
+
+    # Normalise protocol-relative and relative links.
+    if h.startswith("//"):
+        h = "https:" + h
+    if h.startswith("/"):
+        h = "https://duckduckgo.com" + h
+
+    try:
+        p = urlparse(h)
+        qs = parse_qs(p.query or "")
+        uddg = qs.get("uddg")
+        if uddg and isinstance(uddg, list) and uddg and isinstance(uddg[0], str):
+            return unquote(uddg[0])
+    except Exception:
+        pass
+
+    return h
+
+
+def perform_duckduckgo_search(query: str, *, max_results: int = 8) -> dict:
+    """
+    Best-effort DuckDuckGo HTML scraping (no key).
+
+    Note: DDG does not provide an official general web search API. This is a pragmatic fallback
+    and may break if their HTML changes.
+    """
+    try:
+        from bs4 import BeautifulSoup
+    except Exception as e:
+        raise RuntimeError(f"bs4 not available for DuckDuckGo scraping: {e}")
+
+    s = requests.Session()
+    s.trust_env = False
+    headers = {
+        "User-Agent": "ResearchVault/1.2 (+https://github.com/lraivisto/ResearchVault)",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    # html.duckduckgo.com is a lightweight HTML endpoint.
+    url = "https://html.duckduckgo.com/html/"
+    resp = s.get(url, params={"q": query}, headers=headers, timeout=25)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text or "", "html.parser")
+    results: list[dict[str, str]] = []
+
+    # Primary layout.
+    for a in soup.select("a.result__a"):
+        title = a.get_text(" ", strip=True)
+        href = _ddg_decode_url(a.get("href") or a.get("data-href") or "")
+        if not title or not href:
+            continue
+
+        snippet = ""
+        parent = a.find_parent("div", class_=re.compile(r"result")) or a.parent
+        if parent is not None:
+            sn = parent.select_one(".result__snippet") or parent.select_one(".result__snippet--body")
+            if sn:
+                snippet = sn.get_text(" ", strip=True)
+
+        results.append({"url": href, "title": title, "description": snippet})
+        if len(results) >= int(max_results):
+            break
+
+    # Fallback: sometimes the page layout differs.
+    if not results:
+        for row in soup.select("div.results > div"):
+            a = row.find("a")
+            if not a:
+                continue
+            title = a.get_text(" ", strip=True)
+            href = _ddg_decode_url(a.get("href") or "")
+            if title and href:
+                results.append({"url": href, "title": title, "description": ""})
+            if len(results) >= int(max_results):
+                break
+
+    return {"provider": "duckduckgo", "web": {"results": results}}
+
+
+def perform_wikipedia_search(query: str, *, max_results: int = 8, lang: str = "en") -> dict:
+    base = f"https://{(lang or 'en').strip().lower()}.wikipedia.org"
+    url = base + "/w/api.php"
+    params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "format": "json",
+        "utf8": 1,
+        "srlimit": int(max_results),
+    }
+
+    s = requests.Session()
+    s.trust_env = False
+    resp = s.get(url, params=params, timeout=20)
+    resp.raise_for_status()
+    raw = resp.json()
+
+    rows = raw.get("query", {}).get("search", []) if isinstance(raw, dict) else []
+    results: list[dict[str, str]] = []
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            title = (r.get("title") or "").strip()
+            snippet = (r.get("snippet") or "").strip()
+            snippet = re.sub(r"<[^>]+>", "", snippet)
+            snippet = _html.unescape(snippet)
+            if not title:
+                continue
+            page_url = base + "/wiki/" + requests.utils.quote(title.replace(" ", "_"))
+            results.append({"url": page_url, "title": title, "description": snippet})
+
+    return {"provider": "wikipedia", "web": {"results": results}, "raw": raw}
+
+def _search_cache_key(query: str, provider: str) -> str:
+    q = _normalize_query(query)
+    p = (provider or "brave").strip().lower()
+    return hashlib.sha256(f"{p}:{q}".encode()).hexdigest()
+
+
+def _legacy_search_cache_key(query: str) -> str:
+    # v1 cache key (pre multi-provider): sha256(normalized_query)
+    return hashlib.sha256(_normalize_query(query).encode()).hexdigest()
+
+
+def log_search(query, result, provider: str = "brave"):
+    query_hash = _search_cache_key(query, provider)
     conn = db.get_connection()
     c = conn.cursor()
     now = datetime.now().isoformat()
@@ -244,8 +452,8 @@ def log_search(query, result):
     conn.commit()
     conn.close()
 
-def check_search(query, ttl_hours=24):
-    query_hash = hashlib.sha256(query.lower().strip().encode()).hexdigest()
+def check_search(query, ttl_hours=24, provider: str = "brave"):
+    query_hash = _search_cache_key(query, provider)
     conn = db.get_connection()
     c = conn.cursor()
     c.execute("SELECT result, timestamp FROM search_cache WHERE query_hash=?", (query_hash,))
@@ -259,7 +467,127 @@ def check_search(query, ttl_hours=24):
                 return json.loads(result)
         except ValueError:
             pass
+    # Back-compat: if provider is brave, look for legacy (provider-less) cache rows.
+    if (provider or "").strip().lower() == "brave":
+        legacy_hash = _legacy_search_cache_key(query)
+        conn = db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT result, timestamp FROM search_cache WHERE query_hash=?", (legacy_hash,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            result, timestamp = row
+            try:
+                cached_time = datetime.fromisoformat(timestamp)
+                if datetime.now() - cached_time < timedelta(hours=ttl_hours):
+                    return json.loads(result)
+            except ValueError:
+                pass
     return None
+
+
+SUPPORTED_SEARCH_PROVIDERS = {"brave", "duckduckgo", "wikipedia", "searxng", "serper"}
+
+
+def _provider_func(name: str):
+    """
+    Resolve provider functions dynamically so tests can monkeypatch provider implementations
+    (e.g. scripts.core.perform_brave_search) and the dispatcher still respects it.
+    """
+    n = (name or "").strip().lower()
+    if n == "brave":
+        return perform_brave_search
+    if n == "duckduckgo":
+        return perform_duckduckgo_search
+    if n == "wikipedia":
+        return perform_wikipedia_search
+    if n == "searxng":
+        return perform_searxng_search
+    if n == "serper":
+        return perform_serper_search
+    return None
+
+
+def _parse_provider_list(raw: str) -> list[str]:
+    return [p.strip().lower() for p in (raw or "").split(",") if p.strip()]
+
+
+def default_search_providers() -> list[str]:
+    """
+    Default provider order (best-effort):
+    - Brave (key) if configured
+    - Serper (key) if configured
+    - SearxNG (URL) if configured
+    - DuckDuckGo (no key, HTML scrape fallback)
+    - Wikipedia (no key, knowledge-base fallback)
+    """
+    env = os.getenv("RESEARCHVAULT_SEARCH_PROVIDERS")
+    if env:
+        parsed = _parse_provider_list(env)
+        return parsed if parsed else ["brave", "serper", "searxng", "duckduckgo", "wikipedia"]
+    return ["brave", "serper", "searxng", "duckduckgo", "wikipedia"]
+
+
+def search(
+    query: str,
+    *,
+    provider: str = "auto",
+    providers: Optional[list[str]] = None,
+    ttl_hours: int = 24,
+) -> tuple[dict, str, str]:
+    """
+    Perform a search with caching and provider fallback.
+
+    Returns: (result, source, used_provider)
+      - source: "cache" or "network"
+      - used_provider: provider that produced the result (e.g. brave, duckduckgo)
+    """
+    q = (query or "").strip()
+    if not q:
+        raise ValueError("query must be non-empty")
+
+    p = (provider or "auto").strip().lower()
+    order = providers if isinstance(providers, list) and providers else (default_search_providers() if p == "auto" else [p])
+
+    # Cache check in provider order.
+    for prov in order:
+        fn = _provider_func(prov)
+        if not fn:
+            continue
+        cached = check_search(q, ttl_hours=ttl_hours, provider=prov)
+        if cached is not None:
+            return cached, "cache", prov
+
+    last_missing: Optional[Exception] = None
+    last_other: Optional[Exception] = None
+
+    for prov in order:
+        fn = _provider_func(prov)
+        if not fn:
+            continue
+        try:
+            result = fn(q)
+            log_search(q, result, provider=prov)
+            return result, "network", prov
+        except MissingAPIKeyError as e:
+            last_missing = e
+            continue
+        except ProviderNotConfiguredError as e:
+            last_other = e
+            continue
+        except Exception as e:
+            # Network errors or parse errors: try next provider in auto mode.
+            last_other = e
+            continue
+
+    # If we get here, everything failed.
+    if last_missing is not None and p != "auto":
+        raise last_missing
+    if isinstance(last_other, ProviderNotConfiguredError) and p != "auto":
+        raise last_other
+    if last_missing is not None and last_other is None:
+        raise last_missing
+    raise RuntimeError(str(last_other or last_missing or "search failed"))
 
 @db.retry_on_lock()
 def start_project(project_id, name, objective, priority=0, silent: bool = False):
@@ -697,10 +1025,7 @@ def run_verification_missions(
         conn.commit()
 
         try:
-            cached = check_search(query)
-            if cached is None:
-                cached = perform_brave_search(query)
-                log_search(query, cached)
+            cached, source, used_provider = search(query, provider="auto")
 
             meta = {"query_hash": _query_hash(query)}
             # Best-effort extraction for UI, structure varies.
@@ -713,6 +1038,8 @@ def run_verification_missions(
                     if isinstance(top, dict):
                         meta["top_url"] = top.get("url", "")
                         meta["top_title"] = top.get("title", "")
+                meta["provider"] = used_provider
+                meta["source"] = source
             except Exception:
                 pass
 
@@ -736,6 +1063,13 @@ def run_verification_missions(
             )
             results.append({"id": mission_id, "status": "done", "query": query, "meta": meta})
         except MissingAPIKeyError as e:
+            c.execute(
+                "UPDATE verification_missions SET status=?, last_error=?, updated_at=? WHERE id=?",
+                ("blocked", str(e), now, mission_id),
+            )
+            conn.commit()
+            results.append({"id": mission_id, "status": "blocked", "query": query, "error": str(e)})
+        except ProviderNotConfiguredError as e:
             c.execute(
                 "UPDATE verification_missions SET status=?, last_error=?, updated_at=? WHERE id=?",
                 ("blocked", str(e), now, mission_id),

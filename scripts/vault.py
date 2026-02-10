@@ -60,6 +60,12 @@ def main():
     search_parser.add_argument("--query", required=True)
     search_parser.add_argument("--set-result")
     search_parser.add_argument("--format", choices=["rich", "json"], default="rich")
+    search_parser.add_argument(
+        "--provider",
+        choices=["auto", "brave", "duckduckgo", "wikipedia", "searxng", "serper"],
+        default="auto",
+        help="Search provider (default: auto, with fallback).",
+    )
 
     # Log
     log_parser = subparsers.add_parser("log")
@@ -459,9 +465,18 @@ def main():
             # Agent Mode: Manual Injection
             try:
                 result_data = json.loads(args.set_result)
-                core.log_search(args.query, result_data)
+                prov = (args.provider or "auto").strip().lower()
+                if prov == "auto":
+                    prov = "brave"
+                core.log_search(args.query, result_data, provider=prov)
                 if args.format == "json":
-                    print(json.dumps({"ok": True, "source": "set_result", "query": args.query}, indent=2, default=str))
+                    print(
+                        json.dumps(
+                            {"ok": True, "source": "set_result", "provider": prov, "query": args.query},
+                            indent=2,
+                            default=str,
+                        )
+                    )
                 else:
                     console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
             except json.JSONDecodeError:
@@ -472,55 +487,73 @@ def main():
                     console.print(f"[red]{msg}[/red]")
                 sys.exit(2)
         else:
-            # Standalone Mode: Check Cache -> API
-            cached = core.check_search(args.query)
-            if cached:
+            try:
+                prov = (args.provider or "auto").strip().lower()
+                if args.format != "json":
+                    if prov == "auto":
+                        console.print(f"[cyan]Searching (auto) for:[/cyan] {args.query}...")
+                    else:
+                        console.print(f"[cyan]Searching {prov} for:[/cyan] {args.query}...")
+
+                result, source, used = core.search(args.query, provider=prov)
+
                 if args.format == "json":
                     print(
-                        json.dumps({"ok": True, "source": "cache", "query": args.query, "result": cached}, indent=2, default=str)
+                        json.dumps(
+                            {"ok": True, "source": source, "provider": used, "query": args.query, "result": result},
+                            indent=2,
+                            default=str,
+                        )
                     )
                 else:
-                    console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
-                    console.print_json(data=cached)
-            else:
-                try:
-                    if args.format != "json":
-                        console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
-                    result = core.perform_brave_search(args.query)
-                    core.log_search(args.query, result)
-                    if args.format == "json":
-                        print(
-                            json.dumps({"ok": True, "source": "brave", "query": args.query, "result": result}, indent=2, default=str)
+                    if source == "cache":
+                        console.print(f"[dim]Note: Serving cached result for '{args.query}' (provider:{used})[/dim]")
+                    console.print_json(data=result)
+            except core.ProviderNotConfiguredError as e:
+                hint = "This provider is not configured. Configure it in the Portal Diagnostics (e.g. set SEARXNG_BASE_URL) and retry."
+                if args.format == "json":
+                    print(json.dumps({"ok": False, "error": str(e), "hint": hint}, indent=2, default=str))
+                else:
+                    console.print(
+                        Panel(
+                            "[bold red]Search Provider Not Configured[/bold red]\n\n"
+                            "This provider needs configuration (for example, SearxNG needs a base URL).\n"
+                            "Open Portal Diagnostics to configure providers.\n\n"
+                            "[dim]Or choose a different provider: --provider duckduckgo or --provider wikipedia[/dim]",
+                            title="Setup Required",
+                            border_style="red",
                         )
-                    else:
-                        console.print_json(data=result)
-                except core.MissingAPIKeyError as e:
-                    hint = (
-                        "BRAVE_API_KEY is not configured. Set env var BRAVE_API_KEY or configure it in the Portal Diagnostics."
                     )
-                    if args.format == "json":
-                        print(json.dumps({"ok": False, "error": str(e), "hint": hint}, indent=2, default=str))
-                    else:
-                        console.print(
-                            Panel(
-                                "[bold red]Active Search Unavailable[/bold red]\n\n"
-                                "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
-                                "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
-                                "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
-                                "[dim]Or configure it in the Portal Diagnostics panel.[/dim]",
-                                title="Setup Required",
-                                border_style="red",
-                            )
+                print(str(e), file=sys.stderr)
+                sys.exit(2)
+            except core.MissingAPIKeyError as e:
+                hint = (
+                    "This provider requires an API key. Configure it in the Portal Diagnostics or set the env var (e.g. BRAVE_API_KEY)."
+                )
+                if args.format == "json":
+                    print(json.dumps({"ok": False, "error": str(e), "hint": hint}, indent=2, default=str))
+                else:
+                    console.print(
+                        Panel(
+                            "[bold red]Active Search Unavailable[/bold red]\n\n"
+                            "This provider requires an API key.\n"
+                            "Options:\n"
+                            "1. Configure Brave in Portal Diagnostics (recommended)\n"
+                            "2. Or choose a no-key provider: --provider duckduckgo or --provider wikipedia\n\n"
+                            "[dim]If you're running the Portal, use Diagnostics to store keys locally.[/dim]",
+                            title="Setup Required",
+                            border_style="red",
                         )
-                    print(str(e), file=sys.stderr)
-                    sys.exit(2)
-                except Exception as e:
-                    if args.format == "json":
-                        print(json.dumps({"ok": False, "error": str(e)}, indent=2, default=str))
-                    else:
-                        console.print(f"[red]Search failed:[/red] {e}")
-                    print(str(e), file=sys.stderr)
-                    sys.exit(1)
+                    )
+                print(str(e), file=sys.stderr)
+                sys.exit(2)
+            except Exception as e:
+                if args.format == "json":
+                    print(json.dumps({"ok": False, "error": str(e)}, indent=2, default=str))
+                else:
+                    console.print(f"[red]Search failed:[/red] {e}")
+                print(str(e), file=sys.stderr)
+                sys.exit(1)
     elif args.command == "log":
         core.log_event(
             args.id,

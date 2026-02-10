@@ -138,20 +138,32 @@ def run_once(
                     }
                 )
             elif ttype == "query":
-                cached = core.check_search(val)
-                if cached is None:
-                    cached = core.perform_brave_search(val)
-                    core.log_search(val, cached)
+                # Allow a per-target provider override via tags:
+                # - provider=duckduckgo
+                # - provider:brave
+                provider = "auto"
+                for t in tag_list:
+                    tl = t.lower()
+                    if tl.startswith("provider=") or tl.startswith("provider:"):
+                        provider = tl.split("=", 1)[1] if "=" in tl else tl.split(":", 1)[1]
+                        provider = provider.strip() or "auto"
+                        break
+
+                # Validate override (ignore unknowns to avoid bricking the watchdog).
+                if provider not in {"auto", "brave", "duckduckgo", "wikipedia", "searxng", "serper"}:
+                    provider = "auto"
+
+                cached, source, used_provider = core.search(val, provider=provider)
 
                 rh = _result_hash(cached)
                 if rh != (target["last_result_hash"] or ""):
-                    content = _format_search_result(cached, val)
+                    content = f"Provider: {used_provider}\nSource: {source}\n\n" + _format_search_result(cached, val)
                     core.add_insight(
                         pid,
                         title=f"Watchdog: {val}",
                         content=content,
                         source_url="",
-                        tags=",".join([t for t in (tag_list + ["watchdog", "search"]) if t]),
+                        tags=",".join([t for t in (tag_list + ["watchdog", "search", f"provider:{used_provider}"]) if t]),
                         confidence=0.65,
                         branch=branch_name,
                     )
@@ -159,23 +171,44 @@ def run_once(
                         pid,
                         "WATCHDOG",
                         "query",
-                        {"target_id": tid, "query": val, "result_hash": rh},
+                        {"target_id": tid, "query": val, "result_hash": rh, "provider": used_provider, "source": source},
                         confidence=0.8,
                         source="vault",
                         tags="watchdog,search",
                         branch=branch_name,
                     )
                     actions.append(
-                        {"id": tid, "project_id": pid, "type": ttype, "target": val, "status": "ingested"}
+                        {
+                            "id": tid,
+                            "project_id": pid,
+                            "type": ttype,
+                            "target": val,
+                            "status": "ingested",
+                            "provider": used_provider,
+                            "source": source,
+                        }
                     )
                 else:
-                    actions.append({"id": tid, "project_id": pid, "type": ttype, "target": val, "status": "no_change"})
+                    actions.append(
+                        {
+                            "id": tid,
+                            "project_id": pid,
+                            "type": ttype,
+                            "target": val,
+                            "status": "no_change",
+                            "provider": used_provider,
+                            "source": source,
+                        }
+                    )
 
                 core.update_watch_target_run(tid, last_run_at=now_iso, last_result_hash=rh, last_error="")
             else:
                 core.update_watch_target_run(tid, last_run_at=now_iso, last_error=f"Unknown target_type: {ttype}")
                 actions.append({"id": tid, "project_id": pid, "type": ttype, "target": val, "status": "error"})
         except core.MissingAPIKeyError as e:
+            core.update_watch_target_run(tid, last_run_at=now_iso, last_error=str(e))
+            actions.append({"id": tid, "project_id": pid, "type": ttype, "target": val, "status": "blocked"})
+        except core.ProviderNotConfiguredError as e:
             core.update_watch_target_run(tid, last_run_at=now_iso, last_error=str(e))
             actions.append({"id": tid, "project_id": pid, "type": ttype, "target": val, "status": "blocked"})
         except Exception as e:

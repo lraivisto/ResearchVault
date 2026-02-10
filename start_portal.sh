@@ -87,12 +87,12 @@ if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
     fi
 fi
 
-# Brave Search:
-# Many "research" actions (search, verification, watchdog query targets) require BRAVE_API_KEY.
-# The Portal can also store it locally via Diagnostics in ~/.researchvault/portal/secrets.json.
-BRAVE_OK="false"
-if [ -n "${BRAVE_API_KEY:-}" ]; then
-    BRAVE_OK="true"
+# Search Providers:
+# The vault can fall back to best-effort providers (DuckDuckGo/Wikipedia), but API-backed providers
+# (Brave/Serper/SearxNG) are recommended for higher quality and consistency.
+SEARCH_PROVIDER_OK="false"
+if [ -n "${BRAVE_API_KEY:-}" ] || [ -n "${SERPER_API_KEY:-}" ] || [ -n "${SEARXNG_BASE_URL:-}" ]; then
+    SEARCH_PROVIDER_OK="true"
 else
     SECRETS_FILE="$HOME/.researchvault/portal/secrets.json"
     if [ -f "$SECRETS_FILE" ]; then
@@ -103,28 +103,35 @@ from pathlib import Path
 p = Path(sys.argv[1])
 try:
     data = json.loads(p.read_text(encoding="utf-8"))
-    key = data.get("brave_api_key") if isinstance(data, dict) else None
-    if isinstance(key, str) and key.strip():
-        raise SystemExit(0)
+    if isinstance(data, dict):
+        brave = data.get("brave_api_key")
+        serper = data.get("serper_api_key")
+        searx = data.get("searxng_base_url")
+        if isinstance(brave, str) and brave.strip():
+            raise SystemExit(0)
+        if isinstance(serper, str) and serper.strip():
+            raise SystemExit(0)
+        if isinstance(searx, str) and searx.strip():
+            raise SystemExit(0)
 except Exception:
     pass
 raise SystemExit(1)
 PY
         then
-            BRAVE_OK="true"
+            SEARCH_PROVIDER_OK="true"
         fi
     fi
 fi
 
-if [ "$BRAVE_OK" != "true" ]; then
+if [ "$SEARCH_PROVIDER_OK" != "true" ]; then
     echo ""
-    echo "WARNING: BRAVE_API_KEY is not configured."
-    echo "  - Live search, verification, and watchdog query targets will be blocked until configured."
-    echo "  - Fix: open Portal -> Diagnostics -> Brave Search -> Save Key (or export BRAVE_API_KEY in your shell)."
+    echo "WARNING: No API-backed search provider configured (Brave/Serper/SearxNG)."
+    echo "  - The Vault will fall back to best-effort providers (DuckDuckGo/Wikipedia)."
+    echo "  - Fix: open Portal -> Diagnostics -> configure Brave (recommended), Serper, or SearxNG."
     echo ""
 
-    if [ "${RESEARCHVAULT_PORTAL_REQUIRE_BRAVE_API_KEY:-false}" = "true" ]; then
-        echo "RESEARCHVAULT_PORTAL_REQUIRE_BRAVE_API_KEY=true; refusing to start." >&2
+    if [ "${RESEARCHVAULT_PORTAL_REQUIRE_SEARCH_PROVIDER:-false}" = "true" ] || [ "${RESEARCHVAULT_PORTAL_REQUIRE_BRAVE_API_KEY:-false}" = "true" ]; then
+        echo "RESEARCHVAULT_PORTAL_REQUIRE_SEARCH_PROVIDER=true; refusing to start." >&2
         exit 1
     fi
 fi

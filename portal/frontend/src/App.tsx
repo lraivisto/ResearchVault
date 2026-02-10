@@ -73,6 +73,7 @@ function EntryScreen({
   dbs,
   onSelectDb,
   secrets,
+  onOpenDiagnostics,
 }: {
   onSelectProject: (id: string) => void;
   setLastResult: (r: VaultRunResult) => void;
@@ -80,6 +81,7 @@ function EntryScreen({
   dbs: SystemDbsResponse | null;
   onSelectDb: (path: string) => void;
   secrets: SecretsStatusResponse | null;
+  onOpenDiagnostics: () => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
@@ -96,6 +98,9 @@ function EntryScreen({
   const [searchQuery, setSearchQuery] = useState('');
 
   const braveConfigured = secrets?.brave_api_key_configured ?? false;
+  const serperConfigured = secrets?.serper_api_key_configured ?? false;
+  const searxngConfigured = secrets?.searxng_base_url_configured ?? false;
+  const apiBackedSearchReady = braveConfigured || serperConfigured || searxngConfigured;
 
   function slugify(raw: string): string {
     return (raw || '')
@@ -237,6 +242,28 @@ function EntryScreen({
               className="text-xs font-mono px-3 py-1.5 rounded border border-cyan text-cyan bg-cyan-dim"
             >
               Switch DB
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading && projects.length === 0 && !apiBackedSearchReady && (
+        <div className="border border-cyan/30 bg-cyan-dim/40 rounded-lg p-4">
+          <div className="font-mono text-xs uppercase tracking-wider text-cyan">Setup Recommended</div>
+          <div className="text-sm text-gray-200 mt-1">
+            Query-based research works best with an API-backed search provider. You can still run best-effort fallbacks (DuckDuckGo/Wikipedia),
+            but for consistent results configure a provider key.
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-mono text-gray-300">
+              Brave:{braveConfigured ? 'on' : 'off'} | Serper:{serperConfigured ? 'on' : 'off'} | SearxNG:{searxngConfigured ? 'on' : 'off'}
+            </div>
+            <button
+              type="button"
+              onClick={onOpenDiagnostics}
+              className="text-xs font-mono px-3 py-1.5 rounded border border-cyan text-cyan bg-cyan-dim hover:border-cyan/80"
+            >
+              Open Diagnostics
             </button>
           </div>
         </div>
@@ -422,7 +449,7 @@ function EntryScreen({
             {!loading && projects.length === 0 && (
               <tr>
                 <td colSpan={5} className="p-8 text-center text-gray-500">
-                  No projects loaded. Click LIST.
+                  No projects found. Create one with NEW PROJECT.
                 </td>
               </tr>
             )}
@@ -1497,6 +1524,7 @@ function MainApp() {
               dbs={dbs}
               onSelectDb={(p) => selectDb(p)}
               secrets={secrets}
+              onOpenDiagnostics={() => setMode('diagnostics')}
             />
           ) : (
             <ProjectDetail

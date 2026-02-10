@@ -102,8 +102,20 @@ export type DiagnosticsHint = {
 export type DiagnosticsResponse = {
   now_ms: number;
   backend: { python: string; platform: string; pid: number };
-  env: { RESEARCHVAULT_DB: string | null; RESEARCHVAULT_PORTAL_TOKEN_set: boolean; BRAVE_API_KEY_set: boolean };
-  providers: { brave: { configured: boolean; source: 'env' | 'portal' | 'none' | string } };
+  env: {
+    RESEARCHVAULT_DB: string | null;
+    RESEARCHVAULT_PORTAL_TOKEN_set: boolean;
+    BRAVE_API_KEY_set: boolean;
+    SERPER_API_KEY_set?: boolean;
+    SEARXNG_BASE_URL_set?: boolean;
+  };
+  providers: {
+    brave: { configured: boolean; source: 'env' | 'portal' | 'none' | string };
+    serper?: { configured: boolean; source: 'env' | 'portal' | 'none' | string };
+    searxng?: { configured: boolean; source: 'env' | 'portal' | 'none' | string; base_url?: string | null };
+    duckduckgo?: { configured: boolean; source: string };
+    wikipedia?: { configured: boolean; source: string };
+  };
   db: { current: ResolvedDb; candidates: DbCandidate[] };
   cli: {
     ok: boolean;
@@ -120,6 +132,11 @@ export type DiagnosticsResponse = {
 export type SecretsStatusResponse = {
   brave_api_key_configured: boolean;
   brave_api_key_source: 'env' | 'portal' | 'none' | string;
+  serper_api_key_configured?: boolean;
+  serper_api_key_source?: 'env' | 'portal' | 'none' | string;
+  searxng_base_url_configured?: boolean;
+  searxng_base_url_source?: 'env' | 'portal' | 'none' | string;
+  searxng_base_url?: string | null;
 };
 
 export type GraphNode = {

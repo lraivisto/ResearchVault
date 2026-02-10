@@ -23,7 +23,15 @@ from portal.backend.app.db_resolver import (
     resolve_effective_db,
     resolved_as_dict,
 )
-from portal.backend.app.portal_secrets import brave_key_status, clear_brave_api_key, set_brave_api_key
+from portal.backend.app.portal_secrets import (
+    clear_brave_api_key,
+    clear_searxng_base_url,
+    clear_serper_api_key,
+    secrets_status,
+    set_brave_api_key,
+    set_searxng_base_url,
+    set_serper_api_key,
+)
 from portal.backend.app.portal_state import set_selected_db_path
 from portal.backend.app.vault_exec import run_vault
 
@@ -77,6 +85,13 @@ class DbSelectRequest(BaseModel):
 class BraveKeyRequest(BaseModel):
     api_key: str = Field(min_length=10, max_length=500)
 
+class SerperKeyRequest(BaseModel):
+    api_key: str = Field(min_length=10, max_length=500)
+
+
+class SearxngBaseUrlRequest(BaseModel):
+    base_url: str = Field(min_length=4, max_length=500)
+
 
 @router.get("/dbs")
 def system_list_dbs():
@@ -90,10 +105,15 @@ def system_list_dbs():
 
 @router.get("/secrets/status")
 def system_secrets_status():
-    st = brave_key_status()
+    st = secrets_status()
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
     }
 
 
@@ -103,6 +123,11 @@ def system_set_brave_key(req: BraveKeyRequest):
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
     }
 
 
@@ -112,6 +137,67 @@ def system_clear_brave_key():
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
+    }
+
+
+@router.post("/secrets/serper")
+def system_set_serper_key(req: SerperKeyRequest):
+    st = set_serper_api_key(req.api_key)
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
+    }
+
+
+@router.post("/secrets/serper/clear")
+def system_clear_serper_key():
+    st = clear_serper_api_key()
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
+    }
+
+
+@router.post("/secrets/searxng")
+def system_set_searxng_base_url(req: SearxngBaseUrlRequest):
+    st = set_searxng_base_url(req.base_url)
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
+    }
+
+
+@router.post("/secrets/searxng/clear")
+def system_clear_searxng_base_url():
+    st = clear_searxng_base_url()
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+        "serper_api_key_configured": bool(st.serper_api_key_configured),
+        "serper_api_key_source": st.serper_api_key_source,
+        "searxng_base_url_configured": bool(st.searxng_base_url_configured),
+        "searxng_base_url_source": st.searxng_base_url_source,
+        "searxng_base_url": st.searxng_base_url,
     }
 
 
@@ -140,7 +226,7 @@ def system_select_db(req: DbSelectRequest):
 def system_diagnostics():
     resolved, candidates = resolve_current_db()
     dbc = inspect_db(resolved.path)
-    secrets = brave_key_status()
+    secrets = secrets_status()
 
     # CLI probe: if this fails, the Portal isn't actually talking to the vault CLI.
     cli = run_vault(["list", "--format", "json"], timeout_s=30, db_path=resolved.path)
@@ -197,17 +283,21 @@ def system_diagnostics():
                 }
             )
 
-    if not secrets.brave_api_key_configured:
-        needs_brave = False
+    # If no "strong" provider is configured, searches will fall back to best-effort providers.
+    if (not secrets.brave_api_key_configured) and (not secrets.serper_api_key_configured) and (not secrets.searxng_base_url_configured):
+        needs_search = False
         if dbc.stats:
-            needs_brave = bool(dbc.stats.counts.get("watch_targets", 0) or dbc.stats.counts.get("verification_missions", 0))
-        if needs_brave:
+            needs_search = bool(
+                dbc.stats.counts.get("watch_targets", 0)
+                or dbc.stats.counts.get("verification_missions", 0)
+            )
+        if needs_search:
             hints.append(
                 {
-                    "type": "brave_missing",
-                    "severity": "high",
-                    "title": "Brave Search is not configured",
-                    "detail": "Some research actions (search, verification, watchdog query targets) require BRAVE_API_KEY. Configure it in Diagnostics to enable live searching.",
+                    "type": "search_provider_setup",
+                    "severity": "medium",
+                    "title": "No API-backed search provider configured",
+                    "detail": "The vault will fall back to best-effort providers (DuckDuckGo/Wikipedia). Configure Brave (or Serper/SearxNG) for higher quality and consistency.",
                 }
             )
 
@@ -222,12 +312,25 @@ def system_diagnostics():
             "RESEARCHVAULT_DB": os.getenv("RESEARCHVAULT_DB"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
             "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
+            "SERPER_API_KEY_set": bool(os.getenv("SERPER_API_KEY")),
+            "SEARXNG_BASE_URL_set": bool(os.getenv("SEARXNG_BASE_URL")),
         },
         "providers": {
             "brave": {
                 "configured": bool(secrets.brave_api_key_configured),
                 "source": secrets.brave_api_key_source,
-            }
+            },
+            "serper": {
+                "configured": bool(secrets.serper_api_key_configured),
+                "source": secrets.serper_api_key_source,
+            },
+            "searxng": {
+                "configured": bool(secrets.searxng_base_url_configured),
+                "source": secrets.searxng_base_url_source,
+                "base_url": secrets.searxng_base_url,
+            },
+            "duckduckgo": {"configured": True, "source": "built_in"},
+            "wikipedia": {"configured": True, "source": "built_in"},
         },
         "db": {
             "current": resolved_as_dict(resolved),

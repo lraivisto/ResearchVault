@@ -8,10 +8,18 @@ import requests
 from typing import List, Optional, Dict, Any, Type, Tuple
 from datetime import datetime, timedelta
 import scripts.db as db
-from scripts.scuttle import Connector, ArtifactDraft, IngestResult
+from scripts.scuttle import Connector, ArtifactDraft, IngestResult, ScuttleConfig
 
 class MissingAPIKeyError(Exception):
     pass
+
+class ScuttleConfigResolver:
+    """Helper to resolve scuttle configuration from environment and CLI."""
+    @staticmethod
+    def resolve(allow_private: bool = False) -> ScuttleConfig:
+        return ScuttleConfig(
+            allow_private_networks=allow_private
+        )
 
 def scrub_data(data: Any) -> Any:
     """
@@ -57,13 +65,17 @@ class IngestService:
         source: str,
         extra_tags: List[str] = None,
         branch: Optional[str] = None,
+        config: Optional[ScuttleConfig] = None,
     ) -> IngestResult:
+        if not config:
+            config = ScuttleConfig()
+            
         connector = self.get_connector_for(source)
         if not connector:
             return IngestResult(success=False, error=f"No connector found for source: {source}")
 
         try:
-            draft = connector.fetch(source)
+            draft = connector.fetch(source, config)
             
             # Merge tags
             all_tags = draft.tags

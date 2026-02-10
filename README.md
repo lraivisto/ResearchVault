@@ -10,11 +10,11 @@ Vault is built CLI-first to close the loop between planning, ingestion, verifica
 
 ResearchVault is designed with a **Local-First, Privacy-First** posture:
 
-*   **Local Persistence**: All research data stays on your machine in a local SQLite database (`~/.researchvault/research_vault.db`).
-*   **Network Transparency**: Outbound connections are limited to user-requested scuttling or Brave Search API (if a key is provided).
-*   **Zero Auto-Start**: No background processes or servers start during installation. The Watchdog and MCP server must be explicitly invoked from `scripts/services/`.
-*   **Restricted Model Invocation**: `disableModelInvocation: true` prevents the AI from autonomously triggering side-effects without a direct user prompt.
-*   **SSRF Protection**: Built-in URL validation blocks access to private IP ranges and internal hosts.
+*   **Local Persistence**: All research data stays on your machine in a local SQLite database (~/.researchvault/research_vault.db). No telemetry or auto-sync.
+*   **SSRF Protection**: Strict internal network blocking by default. The tool resolves DNS and blocks private/local/link-local IPs (RFC1918, 127.0.0.1, 169.254.169.254, etc.).
+*   **Network Transparency**: Outbound connections are limited to user-requested scuttling or Brave Search API (if configured).
+*   **Zero Auto-Start**: No background processes or servers start during installation. Services must be explicitly invoked from `scripts/services/`.
+*   **Restricted Model Invocation**: The `disable-model-invocation: true` flag prevents the AI from autonomously triggering side-effects without a direct user prompt.
 
 ## 🚀 Installation
 
@@ -34,7 +34,7 @@ python scripts/vault.py init --id "ai-research" --name "AI Research" --objective
 
 ### 2. Multi-Source Ingestion
 ```bash
-python scripts/vault.py scuttle "https://arxiv.org/abs/..." --id "ai-research"
+python scripts/vault.py scuttle "https://example.com" --id "ai-research"
 ```
 
 ### 3. Synthesis & Verification
@@ -53,6 +53,13 @@ python scripts/vault.py verify run --id "ai-research"
 *   `rich`: CLI output formatting.
 *   `mcp`: Standard protocol for agent-tool communication.
 *   `pytest`: Local integrity verification.
+
+## ⚖️ License & Provenance
+
+- **Maintainer**: lraivisto
+- **License**: MIT
+- **Issues**: [GitHub Issues](https://github.com/lraivisto/ResearchVault/issues)
+- **Releases**: [Changelog](CHANGELOG.md)
 
 ---
 *This project is 100% developed by AI agents (OpenClaw / Google Antigravity / OpenAI Codex), carefully orchestrated and reviewed by **Luka Raivisto**.*

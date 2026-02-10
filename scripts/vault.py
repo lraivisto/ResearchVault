@@ -52,6 +52,7 @@ def main():
     scuttle_parser.add_argument("--id", required=True, help="Project ID")
     scuttle_parser.add_argument("--tags", help="Additional comma-separated tags")
     scuttle_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    scuttle_parser.add_argument("--allow-private-networks", action="store_true", default=False, help="Allow fetching from local/private network addresses (Danger: SSRF risk)")
 
     # Search (Hybrid: Cache + Brave API)
     search_parser = subparsers.add_parser("search")
@@ -355,7 +356,10 @@ def main():
             # Additional tags if provided
             extra_tags = args.tags.split(",") if args.tags else []
             
-            result = service.ingest(args.id, args.url, extra_tags=extra_tags, branch=args.branch)
+            # Resolve config
+            config = core.ScuttleConfigResolver.resolve(allow_private=args.allow_private_networks)
+            
+            result = service.ingest(args.id, args.url, extra_tags=extra_tags, branch=args.branch, config=config)
             
             if result.success:
                 source_info = f"({result.metadata.get('source', 'unknown')})"

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+from portal.backend.app.db_resolver import resolve_effective_db
+
 
 @dataclass
 class VaultRunResult:
@@ -42,6 +44,7 @@ def run_vault(
     *,
     timeout_s: int = 60,
     max_output_bytes: int = 200_000,
+    db_path: Optional[str] = None,
 ) -> VaultRunResult:
     """Execute `python -m scripts.vault <args...>` and return captured output.
 
@@ -56,6 +59,11 @@ def run_vault(
     env.setdefault("NO_COLOR", "1")
     env.setdefault("RICH_NO_COLOR", "1")
     env.setdefault("TERM", "dumb")
+
+    # Force the vault subprocess to use the Portal's resolved DB.
+    # This is the critical fix for "DB split" issues between CLI and Portal.
+    effective = db_path or resolve_effective_db().path
+    env["RESEARCHVAULT_DB"] = str(effective)
 
     argv = [sys.executable, "-m", "scripts.vault", *args]
 

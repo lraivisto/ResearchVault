@@ -36,13 +36,26 @@ trap cleanup SIGINT SIGTERM EXIT
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-# Ensure unified database path: prioritize environment, then workspace legacy, then system default.
-# This prevents a "split" where the dashboard sees different data than the CLI.
+# DB resolution:
+# - If RESEARCHVAULT_DB is already set, respect it.
+# - If exactly one known DB exists, pin to it for consistency.
+# - If multiple exist, let the Portal auto-detect and expose a UI selector (no silent overrides).
 if [ -z "${RESEARCHVAULT_DB:-}" ]; then
     LEGACY_DB="$HOME/.openclaw/workspace/memory/research_vault.db"
-    if [ -f "$LEGACY_DB" ]; then
-        echo "Using workspace database: $LEGACY_DB"
+    DEFAULT_DB="$HOME/.researchvault/research_vault.db"
+    LEGACY_EXISTS="false"
+    DEFAULT_EXISTS="false"
+    if [ -f "$LEGACY_DB" ]; then LEGACY_EXISTS="true"; fi
+    if [ -f "$DEFAULT_DB" ]; then DEFAULT_EXISTS="true"; fi
+
+    if [ "$LEGACY_EXISTS" = "true" ] && [ "$DEFAULT_EXISTS" = "false" ]; then
+        echo "Using legacy workspace database: $LEGACY_DB"
         export RESEARCHVAULT_DB="$LEGACY_DB"
+    elif [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "false" ]; then
+        echo "Using default database: $DEFAULT_DB"
+        export RESEARCHVAULT_DB="$DEFAULT_DB"
+    elif [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "true" ]; then
+        echo "Multiple vault DBs detected (legacy + default). The Portal will prompt you to choose."
     fi
 fi
 

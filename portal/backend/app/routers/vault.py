@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from portal.backend.app.auth import require_session
+from portal.backend.app.db_resolver import resolve_effective_db
 from portal.backend.app.vault_exec import run_vault
 
 
@@ -14,7 +15,8 @@ router = APIRouter(prefix="/vault", dependencies=[Depends(require_session)])
 
 
 def _run(args: list[str], *, timeout_s: int = 60):
-    res = run_vault(args, timeout_s=timeout_s)
+    resolved = resolve_effective_db()
+    res = run_vault(args, timeout_s=timeout_s, db_path=resolved.path)
     return {
         "argv": res.argv,
         "exit_code": res.exit_code,
@@ -22,6 +24,9 @@ def _run(args: list[str], *, timeout_s: int = 60):
         "stderr": res.stderr,
         "truncated": res.truncated,
         "ok": res.exit_code == 0,
+        "db_path": resolved.path,
+        "db_source": resolved.source,
+        "db_note": resolved.note,
     }
 
 
@@ -486,3 +491,50 @@ def vault_artifact_list(req: ArtifactListRequest):
         args += ["--branch", req.branch]
     args += ["--format", req.format]
     return _run(args)
+
+
+class StrategyRequest(BaseModel):
+    id: str
+    branch: Optional[str] = None
+    execute: bool = False
+    format: Literal["rich", "json"] = "rich"
+
+
+@router.post("/strategy")
+def vault_strategy(req: StrategyRequest):
+    args = ["strategy", "--id", req.id]
+    if req.branch:
+        args += ["--branch", req.branch]
+    if req.execute:
+        args.append("--execute")
+    args += ["--format", req.format]
+    return _run(args, timeout_s=120)
+
+
+class SynthesizeRequest(BaseModel):
+    id: str
+    branch: Optional[str] = None
+    threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    top_k: int = Field(default=5, ge=1, le=50)
+    max_links: int = Field(default=50, ge=1, le=500)
+    format: Literal["rich", "json"] = "rich"
+
+
+@router.post("/synthesize")
+def vault_synthesize(req: SynthesizeRequest):
+    args = [
+        "synthesize",
+        "--id",
+        req.id,
+        "--threshold",
+        str(req.threshold),
+        "--top-k",
+        str(req.top_k),
+        "--max-links",
+        str(req.max_links),
+        "--format",
+        req.format,
+    ]
+    if req.branch:
+        args += ["--branch", req.branch]
+    return _run(args, timeout_s=120)

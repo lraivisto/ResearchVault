@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import scripts.db as db
 import scripts.core as core
 import scripts.scuttle as scuttle_engine
+import scripts.strategy as strategy_engine
 
 console = Console()
 
@@ -98,6 +99,22 @@ def main():
     summary_parser.add_argument("--id", required=True)
     summary_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
     summary_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
+
+    # Strategy (recommend next best action)
+    strategy_parser = subparsers.add_parser("strategy", help="Recommend the next best action for a project")
+    strategy_parser.add_argument("--id", required=True)
+    strategy_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    strategy_parser.add_argument("--execute", action="store_true", help="Execute the recommended action if possible")
+    strategy_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
+
+    # Synthesis (discover links between findings/artifacts)
+    synth_parser = subparsers.add_parser("synthesize", help="Run local synthesis to discover cross-links")
+    synth_parser.add_argument("--id", required=True)
+    synth_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    synth_parser.add_argument("--threshold", type=float, default=0.78)
+    synth_parser.add_argument("--top-k", dest="top_k", type=int, default=5)
+    synth_parser.add_argument("--max-links", dest="max_links", type=int, default=50)
+    synth_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
 
     # Branches
     branch_parser = subparsers.add_parser("branch", help="Manage divergent reasoning branches")
@@ -367,6 +384,50 @@ def main():
                     title="Vault Quick Summary",
                     border_style="magenta"
                 ))
+    elif args.command == "strategy":
+        try:
+            out = strategy_engine.strategize(args.id, branch=args.branch, execute=bool(args.execute))
+        except Exception as e:
+            console.print(f"[red]Strategy error:[/red] {e}")
+            sys.exit(1)
+
+        if args.format == "json":
+            print(json.dumps(out, indent=2, default=str))
+        else:
+            rec = out.get("recommendation", {})
+            title = rec.get("title") or rec.get("action") or "Recommendation"
+            rationale = rec.get("rationale") or []
+            cmds = rec.get("suggested_commands") or []
+            body = f"[bold cyan]{title}[/bold cyan]\n"
+            if rationale:
+                body += "\n[bold]Rationale[/bold]\n" + "\n".join(f"- {r}" for r in rationale)
+            if cmds:
+                body += "\n\n[bold]Suggested Commands[/bold]\n" + "\n".join(f"$ {c}" for c in cmds)
+            console.print(Panel(body, title="Vault Strategy", border_style="cyan"))
+            if args.execute and out.get("execution"):
+                ex = out["execution"]
+                status = "[green]OK[/green]" if ex.get("ok") else "[red]NOT OK[/red]"
+                console.print(Panel(f"Execution: {status}\n{json.dumps(ex.get('details', {}), indent=2)}", border_style="magenta"))
+    elif args.command == "synthesize":
+        from scripts.synthesis import synthesize
+
+        try:
+            links = synthesize(
+                args.id,
+                branch=args.branch,
+                threshold=float(args.threshold),
+                top_k=int(args.top_k),
+                max_links=int(args.max_links),
+                persist=True,
+            )
+        except Exception as e:
+            console.print(f"[red]Synthesis error:[/red] {e}")
+            sys.exit(1)
+
+        if args.format == "json":
+            print(json.dumps({"links": links}, indent=2, default=str))
+        else:
+            console.print(Panel(f"Created {len(links)} links.", title="Synthesis", border_style="cyan"))
     elif args.command == "scuttle":
         try:
             service = core.get_ingest_service()

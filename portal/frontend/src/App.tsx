@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type ComponentType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -16,170 +16,27 @@ import {
   Terminal,
 } from 'lucide-react';
 
-import { API_BASE } from './config';
+import DecryptedText from '@/components/DecryptedText';
+import SpotlightCard from '@/components/SpotlightCard';
+import DiagnosticsPanel from '@/components/DiagnosticsPanel';
+import GraphView from '@/components/GraphView';
+import ResearchPulseBar from '@/components/ResearchPulseBar';
 
-// --- React Bits / Aesthetic Components ---
-
-function DecryptedText({ text, speed = 50, className = '' }: { text: string, speed?: number, className?: string }) {
-  const [displayText, setDisplayText] = useState(text);
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+';
-
-  useEffect(() => {
-    let interval: any;
-    let iteration = 0;
-    
-    const startAnimation = () => {
-      iteration = 0;
-      clearInterval(interval);
-      interval = setInterval(() => {
-        setDisplayText(() => 
-            text.split('').map((_, index) => {
-                if(index < iteration) return text[index];
-                return chars[Math.floor(Math.random() * chars.length)];
-            }).join('')
-        );
-        if(iteration >= text.length) clearInterval(interval);
-        iteration += 1/3; 
-      }, speed);
-    };
-
-    startAnimation();
-    return () => clearInterval(interval);
-  }, [text, speed]);
-
-  return <span className={className}>{displayText}</span>;
-}
-
-function SpotlightCard({ children, className = "", spotlightColor = "rgba(255, 255, 255, 0.25)" }: { children: React.ReactNode, className?: string, spotlightColor?: string }) {
-  const divRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [opacity, setOpacity] = useState(0);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!divRef.current) return;
-    const rect = divRef.current.getBoundingClientRect();
-    setPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-
-  const handleMouseEnter = () => setOpacity(1);
-  const handleMouseLeave = () => setOpacity(0);
-
-  return (
-    <div
-      ref={divRef}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      className={`relative overflow-hidden ${className}`}
-    >
-      <div
-        className="pointer-events-none absolute -inset-px opacity-0 transition duration-300"
-        style={{
-          opacity,
-          background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, ${spotlightColor}, transparent 40%)`,
-        }}
-      />
-      {children}
-    </div>
-  );
-}
-
-// --- Types & API ---
-
-type VaultRunResult = {
-  argv: string[];
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-  truncated: boolean;
-  ok: boolean;
-};
-
-type Project = {
-  id: string;
-  name: string;
-  objective: string;
-  status: string;
-  created_at: string;
-  priority: number;
-};
-
-type VaultEvent = {
-  type: string;
-  step: number;
-  payload: string;
-  confidence: number;
-  source: string;
-  timestamp: string;
-  tags: string;
-};
-
-type Insight = {
-  title: string;
-  content: string;
-  evidence: string;
-  tags: string;
-  timestamp: string;
-  confidence: number;
-};
-
-type StatusData = {
-  project: Project;
-  recent_events: VaultEvent[];
-  insights: Insight[];
-};
-
-type Branch = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  hypothesis: string;
-  status: string;
-  created_at: string;
-};
-
-type VerificationMission = {
-  id: string;
-  status: string;
-  priority: number;
-  query: string;
-  finding_title: string;
-  finding_conf: number;
-  created_at: string;
-  completed_at: string | null;
-  last_error: string | null;
-};
-
-async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`,
-    {
-      ...init,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers || {}),
-      },
-    },
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status}: ${text}`);
-  }
-
-  return res.json();
-}
-
-async function runVaultGet(endpoint: string): Promise<VaultRunResult> {
-  return apiJson<VaultRunResult>(endpoint, { method: 'GET' });
-}
-
-async function runVaultPost(endpoint: string, payload?: unknown): Promise<VaultRunResult> {
-  return apiJson<VaultRunResult>(endpoint, {
-    method: 'POST',
-    body: JSON.stringify(payload ?? {}),
-  });
-}
+import {
+  apiJson,
+  runVaultGet,
+  runVaultPost,
+  systemGet,
+  systemPost,
+  type Branch,
+  type Insight,
+  type Project,
+  type StatusData,
+  type SystemDbsResponse,
+  type VaultRunResult,
+  type VerificationMission,
+} from '@/lib/api';
+import { usePortalStream } from '@/lib/usePortalStream';
 
 function CommandOutput({ result }: { result: VaultRunResult | null }) {
   if (!result) {
@@ -194,6 +51,12 @@ function CommandOutput({ result }: { result: VaultRunResult | null }) {
         <span className="text-green-400">$ {cmd}</span>
         <span className={result.exit_code === 0 ? 'text-gray-500' : 'text-red-400'}>(exit {result.exit_code}{result.truncated ? ', truncated' : ''})</span>
       </div>
+      {result.db_path && (
+        <div className="text-[11px] text-gray-400 mb-2">
+          DB: <span className="text-gray-300 break-all">{result.db_path}</span>
+          {result.db_source ? <span className="text-gray-500"> (src:{result.db_source})</span> : null}
+        </div>
+      )}
       {result.stderr && (
         <pre className="text-red-300 whitespace-pre-wrap mb-2">{result.stderr}</pre>
       )}
@@ -205,9 +68,15 @@ function CommandOutput({ result }: { result: VaultRunResult | null }) {
 function EntryScreen({
   onSelectProject,
   setLastResult,
+  refreshKey,
+  dbs,
+  onSelectDb,
 }: {
   onSelectProject: (id: string) => void;
   setLastResult: (r: VaultRunResult) => void;
+  refreshKey: number;
+  dbs: SystemDbsResponse | null;
+  onSelectDb: (path: string) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
@@ -294,13 +163,42 @@ function EntryScreen({
   }
 
   useEffect(() => {
-    // Load once to populate the table, but do not spam the console.
+    // Populate the table, but do not spam the console.
+    // refreshKey ticks whenever the DB changes (SSE pulse) or the user switches DBs.
     handleListProjects(false).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshKey]);
+
+  const recommendedDb = useMemo(() => {
+    const currentProjects = dbs?.current.counts?.projects ?? null;
+    if (currentProjects === null) return null;
+    if (currentProjects > 0) return null;
+    const best = (dbs?.candidates ?? [])
+      .filter((c) => (c.counts?.projects ?? 0) > 0)
+      .sort((a, b) => (b.counts?.projects ?? 0) - (a.counts?.projects ?? 0))[0];
+    return best ?? null;
+  }, [dbs]);
 
   return (
     <div className="space-y-6">
+      {recommendedDb && (
+        <div className="border border-amber/40 bg-amber/10 text-amber rounded-lg p-4">
+          <div className="font-mono text-xs uppercase tracking-wider">DB Split Detected</div>
+          <div className="text-sm text-gray-200 mt-1">
+            Your active DB looks empty, but another vault DB contains projects.
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-mono text-gray-300 break-all">{recommendedDb.path}</div>
+            <button
+              type="button"
+              onClick={() => onSelectDb(recommendedDb.path)}
+              className="text-xs font-mono px-3 py-1.5 rounded border border-cyan text-cyan bg-cyan-dim"
+            >
+              Switch DB
+            </button>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           onClick={() => handleListProjects(true)}
@@ -481,11 +379,13 @@ function ProjectDetail({
   onBack,
   setLastResult,
   devMode,
+  refreshKey,
 }: {
   projectId: string;
   onBack: () => void;
   setLastResult: (r: VaultRunResult) => void;
   devMode: boolean;
+  refreshKey: number;
 }) {
   const [tab, setTab] = useState<'status' | 'findings' | 'discovery' | 'branches'>('status');
   const [statusData, setStatusData] = useState<StatusData | null>(null);
@@ -536,7 +436,7 @@ function ProjectDetail({
     if (tab === 'status' && projectId) {
       refreshStatus();
     }
-  }, [projectId, tab]);
+  }, [projectId, tab, refreshKey]);
 
   function TabButton({
     id,
@@ -867,15 +767,15 @@ function ProjectDetail({
         )}
 
         {tab === 'findings' && (
-          <InsightsPanel projectId={projectId} run={run} />
+          <InsightsPanel projectId={projectId} run={run} refreshKey={refreshKey} />
         )}
 
         {tab === 'discovery' && (
-          <VerificationPanel projectId={projectId} run={run} />
+          <VerificationPanel projectId={projectId} run={run} refreshKey={refreshKey} />
         )}
 
         {tab === 'branches' && (
-          <BranchesPanel projectId={projectId} run={run} />
+          <BranchesPanel projectId={projectId} run={run} refreshKey={refreshKey} />
         )}
       </div>
     </div>
@@ -885,9 +785,11 @@ function ProjectDetail({
 function InsightsPanel({
   projectId,
   run,
+  refreshKey,
 }: {
   projectId: string;
   run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
+  refreshKey: number;
 }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -897,7 +799,7 @@ function InsightsPanel({
   useEffect(() => {
     loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, refreshKey]);
 
   async function loadInsights() {
     const res = await run('/vault/insight/list', { id: projectId, format: 'json' });
@@ -1012,9 +914,11 @@ function InsightsPanel({
 function BranchesPanel({
   projectId,
   run,
+  refreshKey,
 }: {
   projectId: string;
   run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
+  refreshKey: number;
 }) {
   const [name, setName] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -1022,7 +926,7 @@ function BranchesPanel({
   useEffect(() => {
     loadBranches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, refreshKey]);
 
   async function loadBranches() {
     const res = await run('/vault/branch/list', { id: projectId, format: 'json' });
@@ -1106,9 +1010,11 @@ function BranchesPanel({
 function VerificationPanel({
   projectId,
   run,
+  refreshKey,
 }: {
   projectId: string;
   run: (endpoint: string, payload?: unknown) => Promise<VaultRunResult>;
+  refreshKey: number;
 }) {
   const [missions, setMissions] = useState<VerificationMission[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1116,7 +1022,7 @@ function VerificationPanel({
   useEffect(() => {
     loadMissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, refreshKey]);
 
   async function loadMissions() {
     setLoading(true);
@@ -1242,19 +1148,61 @@ function VerificationPanel({
 }
 
 function MainApp() {
-  const [authed, setAuthed] = useState(false);
+  const [authState, setAuthState] = useState<'checking' | 'authed' | 'unauth'>('checking');
   const [token, setToken] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [devMode, setDevMode] = useState(false);
+  const [mode, setMode] = useState<'command' | 'graph' | 'diagnostics'>('command');
+
+  const [dbs, setDbs] = useState<SystemDbsResponse | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [systemError, setSystemError] = useState<string | null>(null);
 
   const [currentProject, setCurrentProject] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<VaultRunResult | null>(null);
 
+  const initOnce = useRef(false);
+
+  const stream = usePortalStream(
+    authState === 'authed',
+    {
+      onHello: (payload) => {
+        setDbs((prev) =>
+          prev
+            ? { ...prev, now_ms: payload.now_ms, current: payload.db }
+            : { now_ms: payload.now_ms, current: payload.db, candidates: [] },
+        );
+        setRefreshKey((k) => k + 1);
+      },
+      onPulse: (payload) => {
+        setDbs((prev) =>
+          prev
+            ? { ...prev, now_ms: payload.now_ms, current: payload.db }
+            : { now_ms: payload.now_ms, current: payload.db, candidates: [] },
+        );
+        setRefreshKey((k) => k + 1);
+      },
+      onDbs: (payload) => {
+        setDbs(payload);
+      },
+    },
+    2,
+  );
+
   useEffect(() => {
+    if (initOnce.current) return;
+    initOnce.current = true;
+
     // 1. Check if we already have a session cookie
     apiJson('/auth/status', { method: 'GET' })
-      .then(() => setAuthed(true))
+      .then(() => {
+        setAuthState('authed');
+        const hash = window.location.hash;
+        if (hash.startsWith('#token=')) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      })
       .catch(() => {
         // 2. Not authed? Check URL for #token=
         const hash = window.location.hash;
@@ -1264,24 +1212,27 @@ function MainApp() {
             handleLogin(urlToken);
             // Clear the hash so it doesn't linger in the address bar
             window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            return;
           }
         }
+        setAuthState('unauth');
       });
   }, []);
 
-  async function handleLogin(providedToken?: string | React.MouseEvent) {
+  async function handleLogin(providedToken?: string | MouseEvent) {
     const loginToken = (typeof providedToken === 'string' ? providedToken : token);
     if (!loginToken) return;
 
     setAuthError(null);
+    setAuthState('checking');
     try {
       await apiJson('/auth/login', { method: 'POST', body: JSON.stringify({ token: loginToken }) });
       setToken('');
-      setAuthed(true);
+      setAuthState('authed');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setAuthError(msg);
-      setAuthed(false);
+      setAuthState('unauth');
     }
   }
 
@@ -1289,58 +1240,93 @@ function MainApp() {
     try {
       await apiJson('/auth/logout', { method: 'POST', body: '{}' });
     } finally {
-      setAuthed(false);
+      setAuthState('unauth');
       setCurrentProject(null);
       setLastResult(null);
     }
   }
 
-  if (!authed) {
+  async function refreshDbs() {
+    try {
+      const data = await systemGet<SystemDbsResponse>('/dbs');
+      setDbs(data);
+      setSystemError(null);
+    } catch {
+      setSystemError('Failed to load DB candidates. Check that the backend is running and you are logged in.');
+    }
+  }
+
+  async function selectDb(path: string | null) {
+    try {
+      const next = await systemPost<SystemDbsResponse>('/db/select', { path });
+      setDbs(next);
+      setSystemError(null);
+      setRefreshKey((k) => k + 1);
+      // DB switches can invalidate the current project context.
+      setCurrentProject(null);
+      setMode('command');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSystemError(msg);
+    }
+  }
+
+  useEffect(() => {
+    if (authState !== 'authed') return;
+    refreshDbs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState]);
+
+  if (authState === 'checking') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4 font-mono">
-        <div className="bg-white p-8 rounded shadow border max-w-sm w-full space-y-4 text-gray-900">
-          <h1 className="text-xl font-bold text-gray-900">ResearchVault Portal — Login</h1>
-          <div className="text-sm text-gray-600">
-            Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code> or use a tokenized link.
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-void p-6 font-mono">
+        <div className="text-gray-400">Connecting…</div>
+      </div>
+    );
+  }
+
+  if (authState !== 'authed') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-void p-4 font-mono">
+        <div className="bg-void-surface p-8 rounded border border-white/10 max-w-sm w-full space-y-4 text-gray-100">
+          <h1 className="text-xl font-bold text-gray-100">ResearchVault Portal — Login</h1>
+          <div className="text-sm text-gray-400">Enter your <code>RESEARCHVAULT_PORTAL_TOKEN</code> or use a tokenized link.</div>
           <input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full border p-2 rounded text-gray-900 bg-white"
+            className="w-full border border-white/10 p-2 rounded text-gray-100 bg-void font-mono"
             placeholder="Token"
           />
           <button
             onClick={handleLogin}
             disabled={!token.trim()}
-            className="w-full bg-black text-white p-2 rounded disabled:opacity-50"
+            className="w-full bg-cyan-dim text-cyan p-2 rounded disabled:opacity-50 border border-cyan/30 hover:border-cyan/60"
           >
             Login
           </button>
-          {authError && <div className="text-sm text-red-700">{authError}</div>}
+          {authError && <div className="text-sm text-red-200">{authError}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col ${devMode ? 'border-4 border-yellow-400' : ''}`}>
+    <div className={`min-h-screen bg-void text-gray-100 font-sans flex flex-col ${devMode ? 'border-4 border-yellow-400' : ''}`}>
       {devMode && (
         <div className="bg-yellow-400 text-yellow-900 px-4 py-1 text-center text-xs font-bold uppercase tracking-wider">
           <AlertTriangle className="inline w-3 h-3 mr-1" /> Advanced / Developer Mode Active
         </div>
       )}
 
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
+      <header className="bg-void-surface border-b border-white/10 px-6 py-3 flex justify-between items-center sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <Terminal className="w-6 h-6 text-gray-700" />
+          <Terminal className="w-6 h-6 text-cyan text-glow" />
           <div>
             <div className="font-bold text-lg tracking-tight">
-              <DecryptedText text="Portal Command Center" speed={70} className="text-gray-900" />
+              <DecryptedText text="Portal Command Center" speed={70} className="text-gray-100" />
             </div>
-            <div className="text-xs text-gray-500">
-              A visual shell over <code>scripts.vault</code>. Every button runs exactly one CLI command.
-            </div>
+            <div className="text-xs text-gray-400">A visual shell over <code>scripts.vault</code>. DB-aware, live-updating.</div>
           </div>
         </div>
 
@@ -1349,35 +1335,65 @@ function MainApp() {
             onClick={() => setDevMode((v) => !v)}
             className={`text-xs px-2 py-1 rounded border ${
               devMode
-                ? 'bg-yellow-100 border-yellow-400 text-yellow-800'
-                : 'bg-gray-100 border-gray-300 text-gray-600'
+                ? 'bg-yellow-100 border-yellow-400 text-yellow-900'
+                : 'bg-void border-white/10 text-gray-300 hover:text-white hover:border-white/20'
             }`}
           >
             {devMode ? 'Dev Mode ON' : 'Dev Mode OFF'}
           </button>
-          <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-red-600">
+          <button onClick={handleLogout} className="text-sm text-gray-300 hover:text-red-300">
             Logout
           </button>
         </div>
       </header>
 
+      <ResearchPulseBar
+        mode={mode}
+        setMode={setMode}
+        dbs={dbs}
+        stream={stream}
+        onSelectDb={selectDb}
+        onRefreshDbs={refreshDbs}
+      />
+      {systemError && (
+        <div className="bg-red-500/10 border-b border-red-500/20 text-red-200 px-6 py-2 text-xs font-mono">
+          {systemError}
+        </div>
+      )}
+
       <main className="flex-1 p-6 max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          {!currentProject ? (
-            <EntryScreen onSelectProject={setCurrentProject} setLastResult={setLastResult} />
+          {mode === 'diagnostics' ? (
+            <DiagnosticsPanel
+              refreshKey={refreshKey}
+              onApplyDb={async (path) => {
+                await selectDb(path);
+              }}
+            />
+          ) : mode === 'graph' ? (
+            <GraphView projectId={currentProject} refreshKey={refreshKey} onCommandResult={setLastResult} />
+          ) : !currentProject ? (
+            <EntryScreen
+              onSelectProject={setCurrentProject}
+              setLastResult={setLastResult}
+              refreshKey={refreshKey}
+              dbs={dbs}
+              onSelectDb={(p) => selectDb(p)}
+            />
           ) : (
             <ProjectDetail
               projectId={currentProject}
               onBack={() => setCurrentProject(null)}
               setLastResult={setLastResult}
               devMode={devMode}
+              refreshKey={refreshKey}
             />
           )}
         </div>
 
         <div className="lg:col-span-1">
           <div className="sticky top-20">
-            <div className="flex items-center gap-2 mb-2 text-gray-600 font-mono text-xs uppercase tracking-wider">
+            <div className="flex items-center gap-2 mb-2 text-gray-400 font-mono text-xs uppercase tracking-wider">
               <Terminal className="w-3 h-3" /> Last Command Output
             </div>
             <CommandOutput result={lastResult} />

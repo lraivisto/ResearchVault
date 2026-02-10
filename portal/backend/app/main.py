@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from portal.backend.app.routers import auth as auth_router
+from portal.backend.app.routers import system as system_router
 from portal.backend.app.routers import vault as vault_router
 from portal.backend.app.vault_exec import run_vault
 
@@ -40,6 +41,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router, prefix="/api", tags=["auth"])
+app.include_router(system_router.router, prefix="/api", tags=["system"])
 app.include_router(vault_router.router, prefix="/api", tags=["vault"])
 
 

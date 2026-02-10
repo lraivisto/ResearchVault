@@ -5,10 +5,16 @@ import json
 import sys
 import time
 from functools import wraps
+from pathlib import Path
+from urllib.parse import quote
 
 # Path to the research database
 DEFAULT_DB_PATH = os.path.expanduser("~/.researchvault/research_vault.db")
 LEGACY_DB_PATH = os.path.expanduser("~/.openclaw/workspace/memory/research_vault.db")
+
+# Cache the resolved path per-process to avoid repeated heuristic probing.
+_CACHED_DB_PATH = None
+_CACHED_DB_ENV = None
 
 def retry_on_lock(retries=5, delay=0.1):
     """Decorator to retry database operations if the database is locked."""
@@ -30,13 +36,102 @@ def retry_on_lock(retries=5, delay=0.1):
     return decorator
 
 def get_db_path():
-    """Resolve the database path with env override and legacy fallback."""
+    """Resolve the database path with env override and smart legacy/default selection.
+
+    Goal: avoid a "DB split" where an empty legacy file accidentally wins over a populated
+    default DB (or vice-versa). If both legacy and default DBs exist, we choose the one
+    that appears most active (projects/findings), then fall back to newest mtime.
+    """
+    global _CACHED_DB_PATH, _CACHED_DB_ENV
+
     env_path = os.environ.get("RESEARCHVAULT_DB")
     if env_path:
-        return os.path.expanduser(env_path)
-    if os.path.exists(LEGACY_DB_PATH):
-        return LEGACY_DB_PATH
-    return DEFAULT_DB_PATH
+        expanded = os.path.expanduser(env_path)
+        _CACHED_DB_ENV = env_path
+        _CACHED_DB_PATH = expanded
+        return expanded
+
+    if _CACHED_DB_PATH and _CACHED_DB_ENV is None:
+        return _CACHED_DB_PATH
+
+    legacy = os.path.expanduser(LEGACY_DB_PATH)
+    default = os.path.expanduser(DEFAULT_DB_PATH)
+
+    legacy_exists = os.path.exists(legacy)
+    default_exists = os.path.exists(default)
+
+    if legacy_exists and not default_exists:
+        _CACHED_DB_ENV = None
+        _CACHED_DB_PATH = legacy
+        return legacy
+    if default_exists and not legacy_exists:
+        _CACHED_DB_ENV = None
+        _CACHED_DB_PATH = default
+        return default
+    if not legacy_exists and not default_exists:
+        _CACHED_DB_ENV = None
+        _CACHED_DB_PATH = default
+        return default
+
+    # Both exist: pick the one with actual data.
+    def _sqlite_uri_ro(path: str) -> str:
+        ap = str(Path(path).resolve())
+        return "file:" + quote(ap, safe="/") + "?mode=ro"
+
+    def _table_exists(cur: sqlite3.Cursor, table: str) -> bool:
+        cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (table,))
+        return cur.fetchone() is not None
+
+    def _activity_score(path: str) -> tuple[int, float]:
+        # Score by data density, then mtime.
+        try:
+            st = os.stat(path)
+            mtime = float(st.st_mtime)
+        except Exception:
+            mtime = 0.0
+
+        score = 0
+        try:
+            conn = sqlite3.connect(_sqlite_uri_ro(path), uri=True, timeout=1.0)
+            c = conn.cursor()
+            if _table_exists(c, "projects"):
+                c.execute("SELECT COUNT(*) FROM projects")
+                score += int(c.fetchone()[0]) * 1_000_000
+            if _table_exists(c, "findings"):
+                c.execute("SELECT COUNT(*) FROM findings")
+                score += int(c.fetchone()[0]) * 10_000
+            if _table_exists(c, "events"):
+                c.execute("SELECT COUNT(*) FROM events")
+                score += int(c.fetchone()[0]) * 100
+            conn.close()
+        except Exception:
+            # If we can't inspect, treat it as empty but keep mtime.
+            pass
+        return (int(score), float(mtime))
+
+    best = max([legacy, default], key=_activity_score)
+    other = default if best == legacy else legacy
+
+    # If both look empty, prefer newest; if tied, prefer default.
+    if _activity_score(best)[0] == 0 and _activity_score(other)[0] == 0:
+        try:
+            if os.stat(legacy).st_mtime > os.stat(default).st_mtime:
+                _CACHED_DB_ENV = None
+                _CACHED_DB_PATH = legacy
+                return legacy
+            if os.stat(default).st_mtime > os.stat(legacy).st_mtime:
+                _CACHED_DB_ENV = None
+                _CACHED_DB_PATH = default
+                return default
+        except Exception:
+            pass
+        _CACHED_DB_ENV = None
+        _CACHED_DB_PATH = default
+        return default
+
+    _CACHED_DB_ENV = None
+    _CACHED_DB_PATH = best
+    return best
 
 def get_connection():
     """Returns a connection to the SQLite database with a busy timeout."""

@@ -2,6 +2,8 @@ import os
 import sys
 
 import anyio
+import pytest
+pytest.importorskip("mcp")
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 

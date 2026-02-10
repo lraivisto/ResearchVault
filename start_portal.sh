@@ -36,6 +36,16 @@ trap cleanup SIGINT SIGTERM EXIT
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+# Ensure unified database path: prioritize environment, then workspace legacy, then system default.
+# This prevents a "split" where the dashboard sees different data than the CLI.
+if [ -z "${RESEARCHVAULT_DB:-}" ]; then
+    LEGACY_DB="$HOME/.openclaw/workspace/memory/research_vault.db"
+    if [ -f "$LEGACY_DB" ]; then
+        echo "Using workspace database: $LEGACY_DB"
+        export RESEARCHVAULT_DB="$LEGACY_DB"
+    fi
+fi
+
 echo "Starting ResearchVault Portal..."
 
 # Cleanup old runs if they exist

@@ -164,7 +164,8 @@ export default function GraphView({
           <div className="p-4">
             <svg
               viewBox={`0 0 ${width} ${height}`}
-              className="w-full h-[520px] bg-void rounded border border-white/5"
+              className="w-full h-[520px] rounded border border-white/5"
+              style={{ background: 'transparent' }}
             >
               <defs>
                 <linearGradient id="edgeGlow" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -173,8 +174,7 @@ export default function GraphView({
                 </linearGradient>
               </defs>
 
-              <rect x="0" y="0" width={width} height={height} fill="url(#edgeGlow)" opacity="0.35" />
-
+              {/* Edges */}
               {edges.map((e: GraphEdge) => {
                 const a = positions[e.source];
                 const b = positions[e.target];

@@ -14,6 +14,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Share2,
   Target,
   Terminal,
 } from 'lucide-react';
@@ -1384,8 +1385,27 @@ function VerificationPanel({
             <Play className="w-6 h-6 text-purple-600" />
           </div>
           <div>
-            <div className="font-bold text-gray-800">Discover Links</div>
-            <div className="text-xs text-gray-500 mt-1">Scan low-confidence findings</div>
+            <div className="font-bold text-gray-800">Plan Verification</div>
+            <div className="text-xs text-gray-500 mt-1">Identify low-confidence gaps</div>
+          </div>
+        </button>
+
+        <button
+          onClick={async () => {
+            setLoading(true);
+            await run('/vault/synthesize', { id: projectId, threshold: 0.65, format: 'json' });
+            await loadMissions();
+            setLoading(false);
+          }}
+          disabled={loading}
+          className="bg-white border border-gray-200 p-6 rounded-lg shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-3 text-center group"
+        >
+          <div className="p-3 bg-blue-50 rounded-full group-hover:bg-blue-100 transition">
+            <Share2 className="w-6 h-6 text-blue-600" />
+          </div>
+          <div>
+            <div className="font-bold text-gray-800">Discover Connections</div>
+            <div className="text-xs text-gray-500 mt-1">Link related findings via AI</div>
           </div>
         </button>
 

@@ -39,6 +39,7 @@ def main():
 
     # List
     list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Status Update
     update_parser = subparsers.add_parser("update")
@@ -95,6 +96,8 @@ def main():
     summary_parser = subparsers.add_parser("summary")
     summary_parser.add_argument("--id", required=True)
     summary_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    summary_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
+    summary_parser.add_argument("--ai", action="store_true", help="Generate an AI-synthesized mission verdict")
 
     # Branches
     branch_parser = subparsers.add_parser("branch", help="Manage divergent reasoning branches")
@@ -308,10 +311,25 @@ def main():
                 print(output)
     elif args.command == "list":
         projects = core.list_projects()
-        if not projects:
-            console.print("[yellow]No projects found.[/yellow]")
+        if args.format == "json":
+            # Stable, machine-readable output for the Portal UI.
+            rows = [
+                {
+                    "id": p[0],
+                    "name": p[1],
+                    "objective": p[2],
+                    "status": p[3],
+                    "created_at": p[4],
+                    "priority": p[5],
+                }
+                for p in projects
+            ]
+            print(json.dumps(rows, indent=2))
         else:
-            table = Table(title="Research Vault Projects", box=box.ROUNDED)
+            if not projects:
+                console.print("[yellow]No projects found.[/yellow]")
+            else:
+                table = Table(title="Research Vault Projects", box=box.ROUNDED)
             table.add_column("ID", style="cyan", no_wrap=True)
             table.add_column("Prior", style="magenta", justify="center")
             table.add_column("Status", style="bold")
@@ -336,18 +354,63 @@ def main():
         if not status:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
-            p = status['project']
+            p = status["project"]
             insights = core.get_insights(args.id, branch=args.branch)
-            events = status['recent_events']
-            
-            console.print(Panel(
-                f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
-                f"[bold cyan]Objective:[/] {p[2]}\n"
-                f"[bold cyan]Insights:[/] {len(insights)}\n"
-                f"[bold cyan]Events logged:[/] {len(events)}",
-                title="Vault Quick Summary",
-                border_style="magenta"
-            ))
+            events = status["recent_events"]
+
+            ai_verdict = None
+            if args.ai:
+                # Loopback to OpenClaw for synthesis
+                import subprocess
+
+                # Pick top 5 findings for context
+                findings_snippet = "\n".join([f"- {i[0]}: {i[1][:200]}..." for i in insights[:5]])
+                prompt = (
+                    f"MISSION: Summarize findings for research project '{p[1]}'. "
+                    f"Objective: {p[2]}. "
+                    f"Context: {len(insights)} findings total. "
+                    f"Recent Data:\n{findings_snippet}\n\n"
+                    "Provide a one-sentence 'Mission Verdict' on the current progress. "
+                    "Be technical and concise. Return only the sentence."
+                )
+                try:
+                    # Run via 'openclaw agent' in local (embedded) mode to bypass gateway queue.
+                    smoke_id = f"vault-summary-{p[0]}"
+                    cmd = ["openclaw", "agent", "--local", "--session-id", smoke_id, "--message", prompt, "--json"]
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+                    if res.returncode == 0:
+                        data = json.loads(res.stdout)
+                        # Depending on model output, we might need to extract from payloads
+                        if data.get("payloads") and len(data["payloads"]) > 0:
+                            ai_verdict = data["payloads"][0].get("text", "").strip()
+                except Exception:
+                    ai_verdict = "Synthesis unavailable."
+
+            if args.format == "json":
+                summary_data = {
+                    "project": {
+                        "id": p[0],
+                        "name": p[1],
+                        "objective": p[2],
+                        "status": p[3],
+                        "created_at": p[4],
+                        "priority": p[5],
+                    },
+                    "counts": {"insights": len(insights), "events": len(events)},
+                    "ai_verdict": ai_verdict,
+                }
+                print(json.dumps(summary_data, indent=2, default=str))
+            else:
+                body = (
+                    f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
+                    f"[bold cyan]Objective:[/] {p[2]}\n"
+                    f"[bold cyan]Insights:[/] {len(insights)}\n"
+                    f"[bold cyan]Events logged:[/] {len(events)}"
+                )
+                if ai_verdict:
+                    body += f"\n[bold cyan]AI Verdict:[/] {ai_verdict}"
+
+                console.print(Panel(body, title="Vault Quick Summary", border_style="magenta"))
     elif args.command == "scuttle":
         try:
             service = core.get_ingest_service()

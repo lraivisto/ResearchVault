@@ -127,7 +127,16 @@ def run_once(
             if ttype == "url":
                 res = service.ingest(pid, val, extra_tags=tag_list + ["watchdog"], branch=branch_name)
                 core.update_watch_target_run(tid, last_run_at=now_iso, last_error="" if res.success else (res.error or ""))
-                actions.append({"id": tid, "project_id": pid, "type": ttype, "target": val, "success": res.success})
+                actions.append(
+                    {
+                        "id": tid,
+                        "project_id": pid,
+                        "type": ttype,
+                        "target": val,
+                        "status": "ingested" if res.success else "error",
+                        "success": res.success,
+                    }
+                )
             elif ttype == "query":
                 cached = core.check_search(val)
                 if cached is None:
@@ -181,4 +190,3 @@ def loop(interval_s: int = 300, *, limit: int = 10) -> None:
     while True:
         run_once(limit=limit)
         time.sleep(max(1, int(interval_s)))
-

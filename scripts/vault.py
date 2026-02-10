@@ -934,6 +934,21 @@ def main():
                 for a in actions:
                     table.add_row(a.get("id", ""), a.get("project_id", ""), a.get("type", ""), a.get("status", ""))
                 console.print(table)
+
+                # Portal/automation-friendly exit codes:
+                # - exit 2: research blocked (typically missing BRAVE_API_KEY for query targets)
+                # - exit 1: at least one action errored
+                # - exit 0: all actions ok/no-change/dry-run
+                statuses = [str(a.get("status") or "") for a in actions]
+                if any(s == "blocked" for s in statuses):
+                    print(
+                        "Watchdog blocked: BRAVE_API_KEY is not configured. Configure it (env var or Portal Diagnostics) and retry.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(2)
+                if any(s == "error" for s in statuses):
+                    print("Watchdog encountered errors. See watch target last_error fields for details.", file=sys.stderr)
+                    sys.exit(1)
         else:
             watchdog_loop(interval_s=args.interval, limit=args.limit)
 

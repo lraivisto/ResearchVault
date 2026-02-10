@@ -145,27 +145,34 @@ function EntryScreen({
         throw new Error(res.stderr || 'vault init failed');
       }
 
+      const createdId = (newId.trim() || slugify(newName)).trim();
+
       // Optional: create a watch target from the objective and run watchdog once.
       // This makes "new project" immediately produce research output when Brave is configured.
       if (autoSeed) {
-        const createdId = (newId.trim() || slugify(newName)).trim();
         const seedQuery = (newObjective || newName || '').trim().slice(0, 200);
         if (createdId && seedQuery) {
           const w = await runVaultPost('/vault/watch/add', { id: createdId, type: 'query', target: seedQuery, interval: 6 * 60 * 60 });
           setLastResult(w);
-
-          if (braveConfigured) {
+          if (!w.ok) {
+            setError(w.stderr || 'vault watch add failed');
+          } else {
             const wd = await runVaultPost('/vault/watchdog/once', { id: createdId, limit: 3, dry_run: false });
             setLastResult(wd);
-          } else {
-            setError("Auto-seed created a watch target, but Brave Search isn't configured yet. Open Diagnostics to set BRAVE_API_KEY, then run Watchdog.");
+            if (!wd.ok) {
+              const err = (wd.stderr || '').toLowerCase();
+              if (err.includes('brave_api_key') || err.includes('missing api key')) {
+                setError("Auto-seed created a watch target, but Brave Search isn't configured yet. Open Diagnostics to set BRAVE_API_KEY, then run Watchdog again.");
+              } else {
+                setError(wd.stderr || 'vault watchdog once failed');
+              }
+            }
           }
-
-          onSelectProject(createdId);
         }
       }
 
       await handleListProjects(false);
+      if (createdId) onSelectProject(createdId);
 
       setShowNew(false);
       setNewId('');
@@ -441,6 +448,8 @@ function ProjectDetail({
 }) {
   const [tab, setTab] = useState<'status' | 'findings' | 'discovery' | 'branches'>('status');
   const [statusData, setStatusData] = useState<StatusData | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isWatchdogging, setIsWatchdogging] = useState(false);
 
   // Ingest State
   const [showIngest, setShowIngest] = useState(false);
@@ -469,7 +478,7 @@ function ProjectDetail({
 
   async function refreshStatus() {
     try {
-      const res = await run('/vault/status', { id: projectId, format: 'json' });
+      const res = await runVaultPost('/vault/status', { id: projectId, format: 'json' });
       if (res.ok && res.stdout) {
         // Handle potential parsing errors gracefully
         try {
@@ -537,6 +546,11 @@ function ProjectDetail({
       <div className="flex-1 overflow-auto">
         {tab === 'status' && (
           <div className="space-y-6">
+            {actionError && (
+              <div className="border border-red-500/40 bg-red-500/10 text-red-200 text-sm p-3 rounded font-mono">
+                {actionError}
+              </div>
+            )}
             <div className="flex justify-between items-start flex-wrap gap-2">
                <div className="flex gap-2">
                  <button
@@ -545,6 +559,29 @@ function ProjectDetail({
                   >
                     <RefreshCw className="w-4 h-4" /> Refresh
                   </button>
+
+                 <button
+                    onClick={async () => {
+                      setActionError(null);
+                      setIsWatchdogging(true);
+                      try {
+                        const wd = await run('/vault/watchdog/once', { id: projectId, limit: 5, dry_run: false });
+                        if (!wd.ok) {
+                          throw new Error(wd.stderr || 'vault watchdog once failed');
+                        }
+                        await refreshStatus();
+                      } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        setActionError(msg);
+                      } finally {
+                        setIsWatchdogging(false);
+                      }
+                    }}
+                    className="border border-cyan/40 bg-cyan-dim text-cyan px-4 py-2 rounded hover:border-cyan/70 text-sm flex items-center gap-2 font-bold shadow-[0_0_10px_rgba(0,240,255,0.18)] transition-all disabled:opacity-50"
+                    disabled={isWatchdogging}
+                 >
+                    <Play className={`w-4 h-4 ${isWatchdogging ? 'animate-pulse' : ''}`} /> {isWatchdogging ? 'Researching…' : 'Run Watchdog Now'}
+                 </button>
                  
                  <button 
                     onClick={() => setShowIngest(!showIngest)}
@@ -576,15 +613,18 @@ function ProjectDetail({
                         />
                         <button
                             onClick={async () => {
+                                setActionError(null);
                                 setIsIngesting(true);
-                                await run('/vault/scuttle', { id: projectId, url: ingestUrl });
+                                try {
+                                  const r = await run('/vault/scuttle', { id: projectId, url: ingestUrl });
+                                  if (!r.ok) throw new Error(r.stderr || 'vault scuttle failed');
+                                } catch (e: unknown) {
+                                  setActionError(e instanceof Error ? e.message : String(e));
+                                }
                                 setIngestUrl('');
                                 setIsIngesting(false);
                                 setShowIngest(false);
-                                // Refresh status to show new event
-                                run('/vault/status', { id: projectId, format: 'json' }).then(res => {
-                                    if (res.ok) setStatusData(JSON.parse(res.stdout));
-                                });
+                                await refreshStatus();
                             }}
                             disabled={!ingestUrl || isIngesting}
                             className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50 font-semibold"
@@ -612,20 +652,25 @@ function ProjectDetail({
                         />
                         <button
                             onClick={async () => {
+                                setActionError(null);
                                 setIsExpanding(true);
-                                await run('/vault/watch/add', { 
-                                  id: projectId, 
-                                  type: 'query', 
-                                  target: expandQuery, 
-                                  interval: 3600 
-                                });
+                                try {
+                                  const a = await run('/vault/watch/add', { 
+                                    id: projectId, 
+                                    type: 'query', 
+                                    target: expandQuery, 
+                                    interval: 3600 
+                                  });
+                                  if (!a.ok) throw new Error(a.stderr || 'vault watch add failed');
+                                  const wd = await run('/vault/watchdog/once', { id: projectId, limit: 3, dry_run: false });
+                                  if (!wd.ok) throw new Error(wd.stderr || 'vault watchdog once failed');
+                                } catch (e: unknown) {
+                                  setActionError(e instanceof Error ? e.message : String(e));
+                                }
                                 setExpandQuery('');
                                 setIsExpanding(false);
                                 setShowExpand(false);
-                                // Refresh status to confirm
-                                run('/vault/status', { id: projectId, format: 'json' }).then(res => {
-                                    if (res.ok) setStatusData(JSON.parse(res.stdout));
-                                });
+                                await refreshStatus();
                             }}
                             disabled={!expandQuery || isExpanding}
                             className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 disabled:opacity-50 font-semibold"
@@ -1208,6 +1253,7 @@ function MainApp() {
   const [mode, setMode] = useState<'command' | 'graph' | 'diagnostics'>('command');
 
   const [dbs, setDbs] = useState<SystemDbsResponse | null>(null);
+  const [secrets, setSecrets] = useState<SecretsStatusResponse | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [systemError, setSystemError] = useState<string | null>(null);
 
@@ -1295,6 +1341,7 @@ function MainApp() {
       setAuthState('unauth');
       setCurrentProject(null);
       setLastResult(null);
+      setSecrets(null);
     }
   }
 
@@ -1305,6 +1352,16 @@ function MainApp() {
       setSystemError(null);
     } catch {
       setSystemError('Failed to load DB candidates. Check that the backend is running and you are logged in.');
+    }
+  }
+
+  async function refreshSecrets() {
+    try {
+      const st = await systemGet<SecretsStatusResponse>('/secrets/status');
+      setSecrets(st);
+    } catch {
+      // Non-fatal: portal can still operate; research commands will surface errors.
+      setSecrets(null);
     }
   }
 
@@ -1326,8 +1383,16 @@ function MainApp() {
   useEffect(() => {
     if (authState !== 'authed') return;
     refreshDbs();
+    refreshSecrets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState]);
+
+  useEffect(() => {
+    if (authState !== 'authed') return;
+    if (mode === 'diagnostics') return;
+    refreshSecrets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   if (authState === 'checking') {
     return (
@@ -1431,6 +1496,7 @@ function MainApp() {
               refreshKey={refreshKey}
               dbs={dbs}
               onSelectDb={(p) => selectDb(p)}
+              secrets={secrets}
             />
           ) : (
             <ProjectDetail

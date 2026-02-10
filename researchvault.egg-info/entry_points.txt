@@ -1,0 +1,2 @@
+[console_scripts]
+vault = scripts.vault:main

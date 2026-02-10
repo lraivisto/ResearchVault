@@ -102,7 +102,8 @@ export type DiagnosticsHint = {
 export type DiagnosticsResponse = {
   now_ms: number;
   backend: { python: string; platform: string; pid: number };
-  env: { RESEARCHVAULT_DB: string | null; RESEARCHVAULT_PORTAL_TOKEN_set: boolean };
+  env: { RESEARCHVAULT_DB: string | null; RESEARCHVAULT_PORTAL_TOKEN_set: boolean; BRAVE_API_KEY_set: boolean };
+  providers: { brave: { configured: boolean; source: 'env' | 'portal' | 'none' | string } };
   db: { current: ResolvedDb; candidates: DbCandidate[] };
   cli: {
     ok: boolean;
@@ -114,6 +115,11 @@ export type DiagnosticsResponse = {
   };
   hints: DiagnosticsHint[];
   snapshot: { current_projects: number | null; current_findings: number | null };
+};
+
+export type SecretsStatusResponse = {
+  brave_api_key_configured: boolean;
+  brave_api_key_source: 'env' | 'portal' | 'none' | string;
 };
 
 export type GraphNode = {
@@ -193,4 +199,3 @@ export function systemStreamUrl(intervalS: number): string {
   url.searchParams.set('interval_s', String(intervalS));
   return url.toString();
 }
-

@@ -146,6 +146,7 @@ def vault_log(req: LogRequest):
 class SearchRequest(BaseModel):
     query: str
     set_result: Optional[dict] = None
+    format: Literal["rich", "json"] = "json"
 
 
 @router.post("/search")
@@ -153,6 +154,7 @@ def vault_search(req: SearchRequest):
     args = ["search", "--query", req.query]
     if req.set_result is not None:
         args += ["--set-result", json.dumps(req.set_result)]
+    args += ["--format", req.format]
     return _run(args, timeout_s=60)
 
 

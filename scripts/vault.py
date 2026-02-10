@@ -59,6 +59,7 @@ def main():
     search_parser = subparsers.add_parser("search")
     search_parser.add_argument("--query", required=True)
     search_parser.add_argument("--set-result")
+    search_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Log
     log_parser = subparsers.add_parser("log")
@@ -459,33 +460,67 @@ def main():
             try:
                 result_data = json.loads(args.set_result)
                 core.log_search(args.query, result_data)
-                console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
+                if args.format == "json":
+                    print(json.dumps({"ok": True, "source": "set_result", "query": args.query}, indent=2, default=str))
+                else:
+                    console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
             except json.JSONDecodeError:
-                console.print("[red]Error: --set-result must be valid JSON.[/red]")
+                msg = "Error: --set-result must be valid JSON."
+                if args.format == "json":
+                    print(json.dumps({"ok": False, "error": msg}, indent=2, default=str))
+                else:
+                    console.print(f"[red]{msg}[/red]")
+                sys.exit(2)
         else:
             # Standalone Mode: Check Cache -> API
             cached = core.check_search(args.query)
             if cached:
-                console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
-                console.print_json(data=cached)
+                if args.format == "json":
+                    print(
+                        json.dumps({"ok": True, "source": "cache", "query": args.query, "result": cached}, indent=2, default=str)
+                    )
+                else:
+                    console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
+                    console.print_json(data=cached)
             else:
                 try:
-                    console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
+                    if args.format != "json":
+                        console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
                     result = core.perform_brave_search(args.query)
                     core.log_search(args.query, result)
-                    console.print_json(data=result)
-                except core.MissingAPIKeyError:
-                    console.print(Panel(
-                        "[bold red]Active Search Unavailable[/bold red]\n\n"
-                        "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
-                        "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
-                        "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
-                        "[dim]Or provide a result manually via --set-result if you are an Agent.[/dim]",
-                        title="Setup Required",
-                        border_style="red"
-                    ))
+                    if args.format == "json":
+                        print(
+                            json.dumps({"ok": True, "source": "brave", "query": args.query, "result": result}, indent=2, default=str)
+                        )
+                    else:
+                        console.print_json(data=result)
+                except core.MissingAPIKeyError as e:
+                    hint = (
+                        "BRAVE_API_KEY is not configured. Set env var BRAVE_API_KEY or configure it in the Portal Diagnostics."
+                    )
+                    if args.format == "json":
+                        print(json.dumps({"ok": False, "error": str(e), "hint": hint}, indent=2, default=str))
+                    else:
+                        console.print(
+                            Panel(
+                                "[bold red]Active Search Unavailable[/bold red]\n\n"
+                                "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
+                                "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
+                                "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
+                                "[dim]Or configure it in the Portal Diagnostics panel.[/dim]",
+                                title="Setup Required",
+                                border_style="red",
+                            )
+                        )
+                    print(str(e), file=sys.stderr)
+                    sys.exit(2)
                 except Exception as e:
-                    console.print(f"[red]Search failed:[/red] {e}")
+                    if args.format == "json":
+                        print(json.dumps({"ok": False, "error": str(e)}, indent=2, default=str))
+                    else:
+                        console.print(f"[red]Search failed:[/red] {e}")
+                    print(str(e), file=sys.stderr)
+                    sys.exit(1)
     elif args.command == "log":
         core.log_event(
             args.id,

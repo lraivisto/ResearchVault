@@ -31,6 +31,7 @@ import {
   type Branch,
   type Insight,
   type Project,
+  type SecretsStatusResponse,
   type StatusData,
   type SystemDbsResponse,
   type VaultRunResult,
@@ -71,12 +72,14 @@ function EntryScreen({
   refreshKey,
   dbs,
   onSelectDb,
+  secrets,
 }: {
   onSelectProject: (id: string) => void;
   setLastResult: (r: VaultRunResult) => void;
   refreshKey: number;
   dbs: SystemDbsResponse | null;
   onSelectDb: (path: string) => void;
+  secrets: SecretsStatusResponse | null;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,8 +91,19 @@ function EntryScreen({
   const [newName, setNewName] = useState('');
   const [newObjective, setNewObjective] = useState('');
   const [newPriority, setNewPriority] = useState(0);
+  const [autoSeed, setAutoSeed] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
+
+  const braveConfigured = secrets?.brave_api_key_configured ?? false;
+
+  function slugify(raw: string): string {
+    return (raw || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+  }
 
   async function handleListProjects(showInConsole: boolean) {
     setError(null);
@@ -131,6 +145,26 @@ function EntryScreen({
         throw new Error(res.stderr || 'vault init failed');
       }
 
+      // Optional: create a watch target from the objective and run watchdog once.
+      // This makes "new project" immediately produce research output when Brave is configured.
+      if (autoSeed) {
+        const createdId = (newId.trim() || slugify(newName)).trim();
+        const seedQuery = (newObjective || newName || '').trim().slice(0, 200);
+        if (createdId && seedQuery) {
+          const w = await runVaultPost('/vault/watch/add', { id: createdId, type: 'query', target: seedQuery, interval: 6 * 60 * 60 });
+          setLastResult(w);
+
+          if (braveConfigured) {
+            const wd = await runVaultPost('/vault/watchdog/once', { id: createdId, limit: 3, dry_run: false });
+            setLastResult(wd);
+          } else {
+            setError("Auto-seed created a watch target, but Brave Search isn't configured yet. Open Diagnostics to set BRAVE_API_KEY, then run Watchdog.");
+          }
+
+          onSelectProject(createdId);
+        }
+      }
+
       await handleListProjects(false);
 
       setShowNew(false);
@@ -139,6 +173,7 @@ function EntryScreen({
       setNewObjective('');
       setNewPriority(0);
       setShowAdvanced(false);
+      setAutoSeed(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -218,7 +253,7 @@ function EntryScreen({
 
         <div className="flex p-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <input
-            className="flex-1 p-4 outline-none"
+            className="flex-1 p-4 outline-none text-gray-900 placeholder:text-gray-400"
             placeholder="SEARCH (vault search)"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -246,17 +281,34 @@ function EntryScreen({
 
           <div className="grid grid-cols-1 gap-3">
             <input
-              className="w-full p-2 border border-gray-300 rounded"
+              className="w-full p-2 border border-gray-300 rounded text-gray-900 placeholder:text-gray-400"
               placeholder="Project Name (e.g. 'Best Pizza 2026')"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
             <textarea
-              className="w-full p-2 border border-gray-300 rounded h-24"
+              className="w-full p-2 border border-gray-300 rounded h-24 text-gray-900 placeholder:text-gray-400"
               placeholder="Objective (What are we solving?)"
               value={newObjective}
               onChange={(e) => setNewObjective(e.target.value)}
             />
+
+            <label className="flex items-start gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={autoSeed}
+                onChange={(e) => setAutoSeed(e.target.checked)}
+              />
+              <span>
+                Auto-seed research: create a watchdog query from the objective and run it once.
+                {!braveConfigured ? (
+                  <span className="block text-[11px] text-amber mt-1">
+                    Brave Search not configured. Enable it in Diagnostics to make auto-seed actually search.
+                  </span>
+                ) : null}
+              </span>
+            </label>
 
              <button 
                 type="button" 
@@ -269,13 +321,13 @@ function EntryScreen({
             {showAdvanced && (
                 <>
                 <input
-                  className="w-full p-2 border border-gray-300 rounded bg-gray-50"
+                  className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-900 placeholder:text-gray-400"
                   placeholder="Project ID (Optional - Auto-generated)"
                   value={newId}
                   onChange={(e) => setNewId(e.target.value)}
                 />
                 <input
-                  className="w-full p-2 border border-gray-300 rounded bg-gray-50"
+                  className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-900 placeholder:text-gray-400"
                   type="number"
                   placeholder="Priority"
                   value={newPriority}
@@ -519,7 +571,7 @@ function ProjectDetail({
                         <input 
                             value={ingestUrl}
                             onChange={e => setIngestUrl(e.target.value)}
-                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
                             placeholder="Paste URL (e.g. https://arxiv.org/...)"
                         />
                         <button
@@ -555,7 +607,7 @@ function ProjectDetail({
                         <input 
                             value={expandQuery}
                             onChange={e => setExpandQuery(e.target.value)}
-                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500"
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder:text-gray-400"
                             placeholder="What should we watch? (e.g. 'competitor release notes')"
                         />
                         <button
@@ -692,7 +744,7 @@ function ProjectDetail({
                     <select
                       value={watchType}
                       onChange={(e) => setWatchType(e.target.value as any)}
-                      className="p-2 border border-yellow-300 rounded text-xs bg-white"
+                      className="p-2 border border-yellow-300 rounded text-xs bg-white text-gray-900"
                     >
                       <option value="url">URL</option>
                       <option value="query">Query</option>
@@ -701,7 +753,7 @@ function ProjectDetail({
                       placeholder="Target (URL/Query)"
                       value={watchTarget}
                       onChange={(e) => setWatchTarget(e.target.value)}
-                      className="p-2 border border-yellow-300 rounded text-xs bg-white"
+                      className="p-2 border border-yellow-300 rounded text-xs bg-white text-gray-900 placeholder:text-gray-500"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -728,13 +780,13 @@ function ProjectDetail({
                     placeholder="Query"
                     value={cacheQuery}
                     onChange={(e) => setCacheQuery(e.target.value)}
-                    className="w-full p-2 border border-yellow-300 rounded text-xs bg-white"
+                    className="w-full p-2 border border-yellow-300 rounded text-xs bg-white text-gray-900 placeholder:text-gray-500"
                   />
                   <textarea
                     placeholder="Result JSON"
                     value={cacheSetJson}
                     onChange={(e) => setCacheSetJson(e.target.value)}
-                    className="w-full p-2 border border-yellow-300 rounded text-xs font-mono h-20 bg-white"
+                    className="w-full p-2 border border-yellow-300 rounded text-xs font-mono h-20 bg-white text-gray-900 placeholder:text-gray-500"
                   />
                   <button
                     onClick={() => {
@@ -831,7 +883,7 @@ function InsightsPanel({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder:text-gray-400"
               placeholder="E.g. 'Database latency spikes during backups'"
             />
           </div>
@@ -840,7 +892,7 @@ function InsightsPanel({
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+              className="w-full p-2 border border-gray-300 rounded text-sm h-24 focus:ring-2 focus:ring-blue-500 outline-none resize-none text-gray-900 placeholder:text-gray-400"
               placeholder="Describe what you found. Markdown is supported."
             />
           </div>
@@ -950,7 +1002,7 @@ function BranchesPanel({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder:text-gray-400"
             placeholder="Branch name (e.g. hypothesis-alpha)"
           />
           <button

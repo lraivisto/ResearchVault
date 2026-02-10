@@ -18,6 +18,10 @@ def _state_dir() -> Path:
     return Path(os.path.expanduser(raw)).resolve()
 
 
+def state_dir() -> Path:
+    return _state_dir()
+
+
 def _state_file() -> Path:
     return _state_dir() / "state.json"
 
@@ -73,4 +77,3 @@ def set_selected_db_path(path: Optional[str]) -> PortalState:
         state = PortalState(selected_db_path=None, selected_db_set_at=None)
     save_state(state)
     return state
-

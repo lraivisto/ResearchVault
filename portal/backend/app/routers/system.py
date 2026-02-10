@@ -23,6 +23,7 @@ from portal.backend.app.db_resolver import (
     resolve_effective_db,
     resolved_as_dict,
 )
+from portal.backend.app.portal_secrets import brave_key_status, clear_brave_api_key, set_brave_api_key
 from portal.backend.app.portal_state import set_selected_db_path
 from portal.backend.app.vault_exec import run_vault
 
@@ -73,6 +74,10 @@ class DbSelectRequest(BaseModel):
     path: Optional[str] = Field(default=None, description="Absolute or ~-relative path to a SQLite DB file.")
 
 
+class BraveKeyRequest(BaseModel):
+    api_key: str = Field(min_length=10, max_length=500)
+
+
 @router.get("/dbs")
 def system_list_dbs():
     resolved, candidates = resolve_current_db()
@@ -80,6 +85,33 @@ def system_list_dbs():
         "now_ms": now_ms(),
         "current": resolved_as_dict(resolved),
         "candidates": candidates_as_dict(candidates),
+    }
+
+
+@router.get("/secrets/status")
+def system_secrets_status():
+    st = brave_key_status()
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+    }
+
+
+@router.post("/secrets/brave")
+def system_set_brave_key(req: BraveKeyRequest):
+    st = set_brave_api_key(req.api_key)
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
+    }
+
+
+@router.post("/secrets/brave/clear")
+def system_clear_brave_key():
+    st = clear_brave_api_key()
+    return {
+        "brave_api_key_configured": bool(st.brave_api_key_configured),
+        "brave_api_key_source": st.brave_api_key_source,
     }
 
 
@@ -108,6 +140,7 @@ def system_select_db(req: DbSelectRequest):
 def system_diagnostics():
     resolved, candidates = resolve_current_db()
     dbc = inspect_db(resolved.path)
+    secrets = brave_key_status()
 
     # CLI probe: if this fails, the Portal isn't actually talking to the vault CLI.
     cli = run_vault(["list", "--format", "json"], timeout_s=30, db_path=resolved.path)
@@ -164,6 +197,20 @@ def system_diagnostics():
                 }
             )
 
+    if not secrets.brave_api_key_configured:
+        needs_brave = False
+        if dbc.stats:
+            needs_brave = bool(dbc.stats.counts.get("watch_targets", 0) or dbc.stats.counts.get("verification_missions", 0))
+        if needs_brave:
+            hints.append(
+                {
+                    "type": "brave_missing",
+                    "severity": "high",
+                    "title": "Brave Search is not configured",
+                    "detail": "Some research actions (search, verification, watchdog query targets) require BRAVE_API_KEY. Configure it in Diagnostics to enable live searching.",
+                }
+            )
+
     return {
         "now_ms": now_ms(),
         "backend": {
@@ -174,6 +221,13 @@ def system_diagnostics():
         "env": {
             "RESEARCHVAULT_DB": os.getenv("RESEARCHVAULT_DB"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
+            "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
+        },
+        "providers": {
+            "brave": {
+                "configured": bool(secrets.brave_api_key_configured),
+                "source": secrets.brave_api_key_source,
+            }
         },
         "db": {
             "current": resolved_as_dict(resolved),
@@ -360,4 +414,3 @@ def system_graph(
         "nodes": nodes,
         "edges": edges,
     }
-

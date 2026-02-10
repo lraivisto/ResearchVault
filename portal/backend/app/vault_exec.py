@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from portal.backend.app.db_resolver import resolve_effective_db
+from portal.backend.app.portal_secrets import get_brave_api_key
 
 
 @dataclass
@@ -64,6 +65,12 @@ def run_vault(
     # This is the critical fix for "DB split" issues between CLI and Portal.
     effective = db_path or resolve_effective_db().path
     env["RESEARCHVAULT_DB"] = str(effective)
+
+    # Allow portal-configured secrets (e.g. Brave API key) to drive research commands.
+    if not env.get("BRAVE_API_KEY"):
+        brave = get_brave_api_key()
+        if brave:
+            env["BRAVE_API_KEY"] = brave
 
     argv = [sys.executable, "-m", "scripts.vault", *args]
 

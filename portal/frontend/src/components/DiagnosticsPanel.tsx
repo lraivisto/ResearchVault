@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 
-import type { DiagnosticsResponse, DiagnosticsHint } from '@/lib/api';
-import { systemGet } from '@/lib/api';
+import type { DiagnosticsResponse, DiagnosticsHint, SecretsStatusResponse } from '@/lib/api';
+import { systemGet, systemPost } from '@/lib/api';
 
 function HintCard({
   hint,
@@ -47,6 +47,8 @@ export default function DiagnosticsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [diag, setDiag] = useState<DiagnosticsResponse | null>(null);
+  const [braveKey, setBraveKey] = useState('');
+  const [savingBrave, setSavingBrave] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -86,6 +88,34 @@ export default function DiagnosticsPanel({
       </div>
     );
   }, [cliOk, diag, hints.length]);
+
+  async function saveBrave() {
+    if (!braveKey.trim()) return;
+    setSavingBrave(true);
+    setError(null);
+    try {
+      await systemPost<SecretsStatusResponse>('/secrets/brave', { api_key: braveKey.trim() });
+      setBraveKey('');
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingBrave(false);
+    }
+  }
+
+  async function clearBrave() {
+    setSavingBrave(true);
+    setError(null);
+    try {
+      await systemPost<SecretsStatusResponse>('/secrets/brave/clear', {});
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingBrave(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -160,6 +190,60 @@ export default function DiagnosticsPanel({
         </div>
       )}
 
+      {diag && (
+        <div className="bg-void-surface border border-white/10 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-gray-400 font-mono">Search Provider</div>
+              <div className="text-lg font-semibold text-gray-100">Brave Search</div>
+              <div className="text-sm text-gray-400 mt-1">
+                Live search, verification missions, and watchdog query targets require a Brave API key.
+              </div>
+            </div>
+            <div className="text-xs font-mono text-gray-400">
+              {diag.providers.brave.configured ? (
+                <span className="text-green-300">configured</span>
+              ) : (
+                <span className="text-amber">not configured</span>
+              )}{' '}
+              <span className="text-gray-600">|</span> src:{diag.providers.brave.source}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              type="password"
+              value={braveKey}
+              onChange={(e) => setBraveKey(e.target.value)}
+              placeholder="Paste BRAVE_API_KEY"
+              className="flex-1 bg-void border border-white/10 rounded px-3 py-2 text-sm text-gray-100 font-mono placeholder:text-gray-600"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={saveBrave}
+                disabled={savingBrave || !braveKey.trim()}
+                className="text-xs font-mono px-3 py-2 rounded border border-cyan text-cyan bg-cyan-dim disabled:opacity-50"
+              >
+                Save Key
+              </button>
+              <button
+                type="button"
+                onClick={clearBrave}
+                disabled={savingBrave}
+                className="text-xs font-mono px-3 py-2 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 text-[11px] text-gray-500 font-mono">
+            Stored locally in <span className="text-gray-400">~/.researchvault/portal/secrets.json</span> and injected into vault commands.
+          </div>
+        </div>
+      )}
+
       {hints.length > 0 && (
         <div className="space-y-3">
           <div className="text-xs uppercase tracking-wider text-gray-400 font-mono">Actionable Hints</div>
@@ -209,4 +293,3 @@ export default function DiagnosticsPanel({
     </div>
   );
 }
-

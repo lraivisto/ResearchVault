@@ -231,13 +231,13 @@ export default function GraphView({
           {!selected && <div className="text-sm text-gray-400">Click a node to inspect it.</div>}
           {selected && (
             <>
-              <div className="text-sm text-gray-100 font-semibold">{selected.label}</div>
+              <div className="text-sm text-gray-100 font-semibold break-words">{selected.label}</div>
               <div className="text-xs font-mono text-gray-500 break-all">{selected.id}</div>
-              <div className="text-xs font-mono text-gray-400">
+              <div className="text-xs font-mono text-gray-400 break-words">
                 type:{selected.type}
                 {typeof selected.confidence === 'number' ? ` | conf:${selected.confidence.toFixed(2)}` : ''}
               </div>
-              {selected.tags && <div className="text-xs text-gray-300">tags: {selected.tags}</div>}
+              {selected.tags && <div className="text-xs text-gray-300 break-words">tags: {selected.tags}</div>}
               {selected.path && (
                 <div className="text-xs text-gray-300 break-all">
                   path: <span className="font-mono text-gray-400">{selected.path}</span>

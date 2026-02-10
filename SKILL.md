@@ -5,13 +5,13 @@ metadata:
   {
     "openclaw":
       {
-        "requires": { "python": ">=3.13", "bins": ["uv"] },
+        "requires": { "python": ">=3.13", "bins": [] },
         "install":
           [
             {
               "id": "vault-venv",
               "kind": "exec",
-              "command": "uv venv && uv pip install -e .",
+              "command": "python3 -m venv .venv && . .venv/bin/activate && pip install -e .",
               "label": "Initialize ResearchVault Environment",
             },
           ],

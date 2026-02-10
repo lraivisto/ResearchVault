@@ -1,21 +1,21 @@
 ---
 name: researchvault
-description: "High-velocity research orchestration engine. Manages persistent state, synthesis, and autonomous verification for agents."
+description: "Local-first research orchestration engine. Manages persistent state, synthesis, and autonomous verification for agents."
 metadata:
   {
     "openclaw":
       {
-        "requires": { "python": ">=3.13", "bins": [] },
+        "requires": { "python": ">=3.13" },
         "install":
           [
             {
               "id": "vault-venv",
               "kind": "exec",
               "command": "python3 -m venv .venv && . .venv/bin/activate && pip install -e .",
-              "label": "Initialize ResearchVault Environment",
-        "disableModelInvocation": true,
+              "label": "Initialize ResearchVault (Standard)",
             },
           ],
+        "disableModelInvocation": true,
       },
   }
 ---
@@ -24,49 +24,45 @@ metadata:
 
 Autonomous state manager for agentic research.
 
-## Core Features
+## Security & Privacy (Local First)
 
-- **The Vault**: Local SQLite persistence for `artifacts`, `findings`, and `links`.
-- **Divergent Reasoning**: Create `branches` and `hypotheses` to explore parallel research paths.
-- **Synthesis Engine**: Automated link-discovery using local embeddings.
-- **Active Verification**: Self-correcting agents via `verification_missions`.
-- **Autonomous Strategist**: Analyze state and recommend a Next Best Action (`vault strategy`).
-- **MCP Server**: Native support for cross-agent collaboration.
-- **Watchdog Mode**: Continuous background monitoring of URLs and queries.
+- **Local Storage**: All data is stored in a local SQLite database (~/.researchvault/research_vault.db). No cloud sync.
+- **Network Transparency**: Outbound connections occur ONLY for user-requested URL ingestion (scuttle) or Brave Search API (if configured). No hidden telemetry or background crawling.
+- **Explicit Invocation**: High-latency or network-active features (MCP server, Watchdog) must be explicitly started by the user.
+- **No Model Auto-run**: disableModelInvocation: true ensures the model cannot autonomously start background processes.
 
-## Workflows
+## Installation
 
-### 1. Project Initialization
+### Standard (Recommended)
 ```bash
-uv run python scripts/vault.py init --id "metal-v1" --name "Suomi Metal" --objective "Rising underground bands"
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
-### 2. Multi-Source Ingestion
+### Fast Path (if you use uv)
 ```bash
-uv run python scripts/vault.py scuttle "https://reddit.com/r/metal" --id "metal-v1"
+uv venv && uv pip install -e .
 ```
 
-### 3. Synthesis & Verification
-```bash
-# Link related findings
-uv run python scripts/vault.py synthesize --id "metal-v1"
+## Quick Start
 
-# Plan verification for low-confidence data
-uv run python scripts/vault.py verify plan --id "metal-v1"
-```
+1. **Initialize Project**:
+   ```bash
+   python scripts/vault.py init --objective \"Track tech trends\" --name \"Tech-2026\"
+   ```
 
-### 4. Autonomous Strategist (Next Best Action)
-```bash
-uv run python scripts/vault.py strategy --id "metal-v1"
-uv run python scripts/vault.py strategy --id "metal-v1" --format json
-uv run python scripts/vault.py strategy --id "metal-v1" --execute
-```
+2. **Ingest Data**:
+   ```bash
+   python scripts/vault.py scuttle \"https://example.com\" --id \"tech-2026\"
+   ```
 
-### 5. MCP Server
-```bash
-uv run python scripts/vault.py mcp --transport stdio
-```
+3. **Autonomous Strategist**:
+   ```bash
+   python scripts/vault.py strategy --id \"tech-2026\"
+   ```
 
-## Environment
+## Environment Variables
 
-Requires Python 3.13 and `uv`.
+- RESEARCHVAULT_DB: Path to SQLite database.
+- BRAVE_API_KEY: (Optional) Required for live search and verification missions.

@@ -212,7 +212,7 @@ export default function GraphView({
                       strokeOpacity={active ? 0.35 : 0.15}
                       strokeWidth={3}
                     />
-                    <text x={p.x + 28} y={p.y + 6} fontSize="16" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
+                    <text x={p.x + 28} y={p.y + 6} fontSize="18" fill={active ? '#fff' : '#cbd5e1'} style={{ pointerEvents: 'none' }}>
                       {n.label}
                     </text>
                   </g>

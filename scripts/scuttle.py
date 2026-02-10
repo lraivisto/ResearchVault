@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import ipaddress
 import socket
 import urllib.parse
@@ -8,76 +8,117 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import json
+import logging
 
 class ScuttleError(Exception):
     pass
 
 DEFAULT_TIMEOUT_S = 15
 MAX_FETCH_SIZE = 10 * 1024 * 1024 # 10MB cap
+MAX_REDIRECTS = 5
+
+@dataclass
+class ScuttleConfig:
+    allow_private_networks: bool = False
+    timeout_s: int = DEFAULT_TIMEOUT_S
+    max_size_bytes: int = MAX_FETCH_SIZE
+    max_redirects: int = MAX_REDIRECTS
 
 class SafeSession(requests.Session):
     """
-    Session that enforces safety rules on every request and redirect hop.
-    - No internal/private network access.
-    - No proxies (from environment).
-    - Response size limit.
+    Session that enforces strict SSRF protections.
+    - Blocks private/local/link-local networks.
+    - Resolves DNS and verifies resolved IPs.
+    - Respects redirect limits and re-verifies safe URLs on every hop.
     """
-    def __init__(self):
+    def __init__(self, config: ScuttleConfig):
         super().__init__()
-        self.trust_env = False # Disable proxies from environment
+        self.trust_env = False # No proxies
+        self.scuttle_config = config
+        self.max_redirects = config.max_redirects
 
-    def send(self, request, **kwargs):
-        _ensure_safe_url(request.url)
-        # Always stream to check size before reading full content
-        kwargs["stream"] = True
-        resp = super().send(request, **kwargs)
+    def request(self, method, url, **kwargs):
+        # We handle redirects manually to ensure safety on every hop
+        kwargs["allow_redirects"] = False
+        kwargs["timeout"] = self.scuttle_config.timeout_s
         
-        # Check size if Content-Length is present
-        cl = resp.headers.get("Content-Length")
-        if cl:
-            try:
-                if int(cl) > MAX_FETCH_SIZE:
-                    raise ScuttleError(f"Response too large: {cl} bytes")
-            except (ValueError, TypeError):
-                pass
+        current_url = url
+        redirect_count = 0
+        
+        while True:
+            _ensure_safe_url(current_url, self.scuttle_config.allow_private_networks)
             
-        return resp
+            # Use stream to check size
+            kwargs["stream"] = True
+            resp = super().request(method, current_url, **kwargs)
+            
+            # Check size
+            cl = resp.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > self.scuttle_config.max_size_bytes:
+                        raise ScuttleError(f"Response too large: {cl} bytes")
+                except (ValueError, TypeError):
+                    pass
+            
+            if resp.is_redirect:
+                redirect_count += 1
+                if redirect_count > self.max_redirects:
+                    raise ScuttleError(f"Too many redirects ({redirect_count})")
+                
+                next_url = resp.headers.get("Location")
+                if not next_url:
+                    break
+                # Handle relative redirects
+                current_url = urllib.parse.urljoin(current_url, next_url)
+                continue
+            
+            return resp
 
-def _is_blocked_ip(ip: str) -> bool:
+def _is_safe_ip(ip: str, allow_private: bool) -> bool:
     try:
         address = ipaddress.ip_address(ip)
     except ValueError:
+        return False
+        
+    if allow_private:
         return True
-    return (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
+        
+    # Block list for SSRF prevention
+    return not (
+        address.is_private          # RFC1918 (10/8, 172.16/12, 192.168/16)
+        or address.is_loopback      # 127.0.0.0/8, ::1
+        or address.is_link_local    # 169.254.0.0/16, fe80::/10
+        or address.is_multicast     # 224.0.0.0/4, ff00::/8
+        or address.is_reserved      # IANA reserved
+        or address.is_unspecified   # 0.0.0.0, ::
     )
 
-def _is_blocked_host(hostname: str) -> bool:
-    if hostname in {"localhost"} or hostname.endswith(".localhost") or hostname.endswith(".local"):
-        return True
-    try:
-        addrinfo = socket.getaddrinfo(hostname, None)
-    except socket.gaierror:
-        return True
-    for entry in addrinfo:
-        ip = entry[4][0]
-        if _is_blocked_ip(ip):
-            return True
-    return False
-
-def _ensure_safe_url(url: str) -> None:
+def _ensure_safe_url(url: str, allow_private: bool) -> None:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in {"http", "https"}:
-        raise ScuttleError("Only http/https URLs are allowed.")
-    if not parsed.hostname:
+        raise ScuttleError(f"Scheme '{parsed.scheme}' is not allowed. Only http/https.")
+    
+    hostname = parsed.hostname
+    if not hostname:
         raise ScuttleError("URL must include a hostname.")
-    if _is_blocked_host(parsed.hostname):
-        raise ScuttleError("Blocked host: local/private addresses are not allowed.")
+        
+    # 1. Block obviously local hostnames
+    if hostname.lower() in {"localhost", "metadata.google.internal"} or hostname.endswith(".local") or hostname.endswith(".localhost"):
+        if not allow_private:
+            raise ScuttleError(f"Blocked host: '{hostname}' is a local or internal address.")
+
+    # 2. Resolve DNS and check all returned IPs
+    try:
+        # getaddrinfo returns a list of 5-tuples. The 5th element is (address, port)
+        addr_info = socket.getaddrinfo(hostname, parsed.port or (80 if parsed.scheme == "http" else 443))
+    except socket.gaierror as e:
+        raise ScuttleError(f"DNS resolution failed for '{hostname}': {e}")
+
+    for entry in addr_info:
+        ip = entry[4][0]
+        if not _is_safe_ip(ip, allow_private):
+            raise ScuttleError(f"Blocked host: '{hostname}' resolves to a restricted IP: {ip}")
 
 @dataclass
 class ArtifactDraft:
@@ -107,7 +148,7 @@ class Connector(ABC):
         pass
 
     @abstractmethod
-    def fetch(self, source: str) -> ArtifactDraft:
+    def fetch(self, source: str, config: ScuttleConfig) -> ArtifactDraft:
         """Fetch and parse content into an ArtifactDraft."""
         pass
 
@@ -116,8 +157,8 @@ class Scuttler(Connector):
     def can_handle(self, url: str) -> bool:
         return False
 
-    def fetch(self, url: str) -> ArtifactDraft:
-        data = self.scuttle(url)
+    def fetch(self, url: str, config: ScuttleConfig) -> ArtifactDraft:
+        data = self.scuttle(url, config)
         return ArtifactDraft(
             title=data["title"],
             content=data["content"],
@@ -128,7 +169,7 @@ class Scuttler(Connector):
         )
 
     @abstractmethod
-    def scuttle(self, url: str) -> Dict[str, Any]:
+    def scuttle(self, url: str, config: ScuttleConfig) -> Dict[str, Any]:
         """Legacy scuttle method returning a dict."""
         raise NotImplementedError
 
@@ -136,8 +177,7 @@ class RedditScuttler(Scuttler):
     def can_handle(self, url):
         return "reddit.com" in url or "redd.it" in url
 
-    def scuttle(self, url):
-        # Clean URL and append .json
+    def scuttle(self, url, config: ScuttleConfig):
         if "?" in url:
             url = url.split("?")[0]
         if not url.endswith(".json"):
@@ -145,24 +185,20 @@ class RedditScuttler(Scuttler):
         else:
             json_url = url
 
-        headers = {"User-Agent": "ResearchVault/1.0.1"}
+        headers = {"User-Agent": "ResearchVault/2.6.2"}
         try:
-            with SafeSession() as session:
-                resp = session.get(json_url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+            with SafeSession(config) as session:
+                resp = session.get(json_url, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
             
-            # Reddit JSON structure: [listing_post, listing_comments]
             post_data = data[0]['data']['children'][0]['data']
-            
             title = post_data.get('title', 'No Title')
             body = post_data.get('selftext', '')
             score = post_data.get('score', 0)
             subreddit = post_data.get('subreddit', 'unknown')
-            
             content = f"Subreddit: r/{subreddit}\nScore: {score}\nBody: {body}\n"
             
-            # Try to get top comment if available
             try:
                 comments = data[1]['data']['children']
                 if comments:
@@ -187,47 +223,39 @@ class MoltbookScuttler(Scuttler):
     def can_handle(self, url):
         return "moltbook" in url
 
-    def scuttle(self, url):
-        # Mock implementation for the fictional platform
-        # URL format: moltbook://post/<id>
-        # Suspicion Protocol: treat Moltbook as low-confidence unless corroborated.
+    def scuttle(self, url, config: ScuttleConfig):
         return {
             "source": "moltbook",
             "type": "SCUTTLE_MOLTBOOK",
             "title": "State Management in Autonomous Agents",
-            "content": "Modular state management is the missing piece. Persistent SQLite vault + multi-source scuttling = agents that can actually remember and learn across sessions.",
+            "content": "Modular state management is the missing piece.",
             "confidence": 0.55,
             "tags": "moltbook,agents,state,unverified"
         }
 
 class WebScuttler(Scuttler):
     def can_handle(self, url):
-        return True # Fallback
+        return True
 
-    def scuttle(self, url):
-        headers = {"User-Agent": "ResearchVault/1.0.1"}
+    def scuttle(self, url, config: ScuttleConfig):
+        headers = {"User-Agent": "ResearchVault/2.6.2"}
         try:
-            with SafeSession() as session:
-                resp = session.get(url, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+            with SafeSession(config) as session:
+                resp = session.get(url, headers=headers)
                 resp.raise_for_status()
-                
                 soup = BeautifulSoup(resp.text, 'html.parser')
             
             title = soup.title.string if soup.title else url
-            
-            # Very basic extraction: get all paragraphs
-            # In a real tool this would be more sophisticated (readability.js style)
             paragraphs = soup.find_all('p')
             text_content = "\n\n".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 50])
-            
             if not text_content:
-                text_content = soup.get_text()[:2000] # Fallback to raw text, truncated
+                text_content = soup.get_text()[:2000]
 
             return {
                 "source": "web",
                 "type": "SCUTTLE_WEB",
                 "title": title.strip(),
-                "content": text_content[:5000], # Limit payload
+                "content": text_content[:5000],
                 "confidence": 0.7,
                 "tags": "web,scraping"
             }
@@ -238,8 +266,7 @@ class GrokipediaConnector(Connector):
     def can_handle(self, source: str) -> bool:
         return "grokipedia.com" in source or source.startswith("grokipedia://")
 
-    def fetch(self, source: str) -> ArtifactDraft:
-        # Extract slug from URL or ID
+    def fetch(self, source: str, config: ScuttleConfig) -> ArtifactDraft:
         if "/" in source:
             slug = source.split("/")[-1]
         else:
@@ -247,8 +274,8 @@ class GrokipediaConnector(Connector):
             
         api_url = f"https://grokipedia-api.com/page/{slug}"
         try:
-            with SafeSession() as session:
-                resp = session.get(api_url, timeout=DEFAULT_TIMEOUT_S)
+            with SafeSession(config) as session:
+                resp = session.get(api_url)
                 resp.raise_for_status()
                 data = resp.json()
             
@@ -268,27 +295,20 @@ class YouTubeConnector(Connector):
     def can_handle(self, source: str) -> bool:
         return "youtube.com" in source or "youtu.be" in source
 
-    def fetch(self, source: str) -> ArtifactDraft:
-        headers = {"User-Agent": "ResearchVault/1.1.0"}
+    def fetch(self, source: str, config: ScuttleConfig) -> ArtifactDraft:
+        headers = {"User-Agent": "ResearchVault/2.6.2"}
         try:
-            with SafeSession() as session:
-                resp = session.get(source, headers=headers, timeout=DEFAULT_TIMEOUT_S)
+            with SafeSession(config) as session:
+                resp = session.get(source, headers=headers)
                 resp.raise_for_status()
-                
                 soup = BeautifulSoup(resp.text, 'html.parser')
             title = soup.title.string.replace(" - YouTube", "") if soup.title else source
-            
-            # Metadata-only: extract from meta tags
             desc = ""
             desc_tag = soup.find("meta", property="og:description") or soup.find("meta", name="description")
-            if desc_tag:
-                desc = desc_tag.get("content", "")
-
+            if desc_tag: desc = desc_tag.get("content", "")
             channel = ""
             channel_tag = soup.find("link", itemprop="name") or soup.find("meta", property="og:video:tag")
-            if channel_tag:
-                channel = channel_tag.get("content", "")
-
+            if channel_tag: channel = channel_tag.get("content", "")
             content = f"Channel: {channel}\n\nDescription:\n{desc}"
             
             return ArtifactDraft(
@@ -308,4 +328,4 @@ def get_scuttler(url):
     for s in scuttlers:
         if s.can_handle(url):
             return s
-    return WebScuttler() # Should not be reached due to fallback, but safe
+    return WebScuttler()

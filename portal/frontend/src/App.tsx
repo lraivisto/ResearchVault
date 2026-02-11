@@ -494,6 +494,7 @@ function ProjectDetail({
   const [showIngest, setShowIngest] = useState(false);
   const [ingestUrl, setIngestUrl] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
+  const [ingestAllowPrivate, setIngestAllowPrivate] = useState(false);
 
   // Expand Mission State
   const [showExpand, setShowExpand] = useState(false);
@@ -667,7 +668,11 @@ function ProjectDetail({
                       setActionError(null);
                       setIsIngesting(true);
                       try {
-                        const r = await run('/vault/scuttle', { id: projectId, url: ingestUrl });
+                        const r = await run('/vault/scuttle', { 
+                          id: projectId, 
+                          url: ingestUrl,
+                          allow_private_networks: ingestAllowPrivate
+                        });
                         if (!r.ok) throw new Error(r.stderr || 'vault scuttle failed');
                       } catch (e: unknown) {
                         setActionError(e instanceof Error ? e.message : String(e));
@@ -675,6 +680,7 @@ function ProjectDetail({
                       setIngestUrl('');
                       setIsIngesting(false);
                       setShowIngest(false);
+                      setIngestAllowPrivate(false);
                       await refreshStatus();
                     }}
                     disabled={!ingestUrl || isIngesting}
@@ -682,6 +688,18 @@ function ProjectDetail({
                   >
                     {isIngesting ? 'Ingesting...' : 'Run Ingest'}
                   </button>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="allow-private"
+                    checked={ingestAllowPrivate}
+                    onChange={e => setIngestAllowPrivate(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="allow-private" className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                    <AlertTriangle className="w-3 h-3 text-amber-500" /> Allow private networks (SSRF risk)
+                  </label>
                 </div>
                 <div className="text-xs text-gray-500 mt-2">
                   Extracts text, summarizes, and tags content automatically.

@@ -163,6 +163,7 @@ class ScuttleRequest(BaseModel):
     url: str
     tags: str = ""
     branch: Optional[str] = None
+    allow_private_networks: bool = False
 
 
 @router.post("/scuttle")
@@ -172,6 +173,8 @@ def vault_scuttle(req: ScuttleRequest):
         args += ["--tags", req.tags]
     if req.branch:
         args += ["--branch", req.branch]
+    if req.allow_private_networks:
+        args.append("--allow-private-networks")
     return _run(args, timeout_s=120)
 
 

@@ -5,12 +5,16 @@ import os
 import re
 import uuid
 import requests
+import inspect
 from typing import List, Optional, Dict, Any, Type, Tuple
 from datetime import datetime, timedelta
 import scripts.db as db
 from scripts.scuttle import Connector, ArtifactDraft, IngestResult, ScuttleConfig
 
 class MissingAPIKeyError(Exception):
+    pass
+
+class ProviderNotConfiguredError(Exception):
     pass
 
 class ScuttleConfigResolver:
@@ -39,7 +43,19 @@ def scrub_data(data: Any) -> Any:
         data = re.sub(r'~/[a-zA-Z0-9._/-]*\.(?:ssh|bash|zsh|aws|config|env|key|pem|pgp|gpg|token)[a-zA-Z0-9._/-]*', '[REDACTED_SENSITIVE_PATH]', data)
         return data
     elif isinstance(data, dict):
-        return {k: scrub_data(v) for k, v in data.items()}
+        def _is_sensitive_key(key: Any) -> bool:
+            k = str(key).lower()
+            if re.search(r"(^|[_-])(secret|token|api[_-]?key|private[_-]?key|key)($|[_-])", k):
+                return True
+            return False
+
+        scrubbed: Dict[Any, Any] = {}
+        for k, v in data.items():
+            if _is_sensitive_key(k):
+                scrubbed[k] = "[REDACTED]"
+            else:
+                scrubbed[k] = scrub_data(v)
+        return scrubbed
     elif isinstance(data, list):
         return [scrub_data(i) for i in data]
     return data
@@ -59,6 +75,23 @@ class IngestService:
                 return connector
         return None
 
+    @staticmethod
+    def _fetch_with_optional_config(connector: Connector, source: str, config: ScuttleConfig) -> ArtifactDraft:
+        fetch = connector.fetch
+        try:
+            sig = inspect.signature(fetch)
+            params = list(sig.parameters.values())
+            if any(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params):
+                return fetch(source, config)
+            if len(params) >= 2:
+                return fetch(source, config)
+            return fetch(source)
+        except (TypeError, ValueError):
+            try:
+                return fetch(source, config)
+            except TypeError:
+                return fetch(source)
+
     def ingest(
         self,
         project_id: str,
@@ -75,7 +108,7 @@ class IngestService:
             return IngestResult(success=False, error=f"No connector found for source: {source}")
 
         try:
-            draft = connector.fetch(source, config)
+            draft = self._fetch_with_optional_config(connector, source, config)
             
             # Merge tags
             all_tags = draft.tags
@@ -106,6 +139,23 @@ class IngestService:
             return IngestResult(success=True, metadata={"title": draft.title, "source": draft.source})
         except Exception as e:
             return IngestResult(success=False, error=str(e))
+
+def search(query: str, provider: str = "auto", ttl_hours: int = 24) -> Tuple[Any, str, str]:
+    """Search with caching; returns (result, source, provider_used)."""
+    provider_norm = (provider or "auto").strip().lower()
+    if provider_norm == "auto":
+        provider_norm = "brave"
+
+    cached = check_search(query, ttl_hours=ttl_hours)
+    if cached is not None:
+        return cached, "cache", provider_norm
+
+    if provider_norm == "brave":
+        result = perform_brave_search(query)
+        log_search(query, result)
+        return result, "live", provider_norm
+
+    raise ProviderNotConfiguredError(f"Search provider '{provider_norm}' is not configured.")
 
 def _safe_id_part(raw: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", (raw or "").strip())

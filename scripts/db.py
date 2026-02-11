@@ -15,6 +15,24 @@ LEGACY_DB_PATH = os.path.expanduser("~/.openclaw/workspace/memory/research_vault
 # Cache the resolved path per-process to avoid repeated heuristic probing.
 _CACHED_DB_PATH = None
 _CACHED_DB_ENV = None
+LOCAL_DB_FILENAME = "research_vault.db"
+
+def _sqlite_uri_rw(path: str) -> str:
+    ap = str(Path(path).resolve())
+    return "file:" + quote(ap, safe="/") + "?mode=rwc"
+
+def _local_fallback_db() -> str:
+    return os.path.abspath(os.path.join(os.getcwd(), LOCAL_DB_FILENAME))
+
+def _dir_writable(path: str) -> bool:
+    try:
+        test_path = os.path.join(path, f".vault_write_test_{uuid.uuid4().hex}")
+        with open(test_path, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        os.remove(test_path)
+        return True
+    except Exception:
+        return False
 
 def retry_on_lock(retries=5, delay=0.1):
     """Decorator to retry database operations if the database is locked."""
@@ -135,10 +153,28 @@ def get_db_path():
 
 def get_connection():
     """Returns a connection to the SQLite database with a busy timeout."""
+    global _CACHED_DB_PATH, _CACHED_DB_ENV
     db_path = get_db_path()
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    # 30 second timeout for busy/locked database
-    return sqlite3.connect(db_path, timeout=30.0)
+    env_path = os.environ.get("RESEARCHVAULT_DB")
+    try:
+        db_dir = os.path.dirname(db_path) or "."
+        os.makedirs(db_dir, exist_ok=True)
+        if not _dir_writable(db_dir):
+            raise PermissionError(f"DB directory not writable: {db_dir}")
+        # 30 second timeout for busy/locked database
+        return sqlite3.connect(_sqlite_uri_rw(db_path), uri=True, timeout=30.0)
+    except (sqlite3.OperationalError, OSError, PermissionError):
+        if env_path:
+            raise
+        fallback = _local_fallback_db()
+        fallback_dir = os.path.dirname(fallback) or "."
+        os.makedirs(fallback_dir, exist_ok=True)
+        if not _dir_writable(fallback_dir):
+            raise
+        conn = sqlite3.connect(_sqlite_uri_rw(fallback), uri=True, timeout=30.0)
+        _CACHED_DB_ENV = None
+        _CACHED_DB_PATH = fallback
+        return conn
 
 def init_db():
     """Initialize the database and run versioned migrations."""

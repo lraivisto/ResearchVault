@@ -1,6 +1,7 @@
 import pytest
 
 from fastapi import HTTPException
+from fastapi import Response
 
 
 def test_stateless_session_cookie_roundtrip(monkeypatch):
@@ -33,3 +34,17 @@ def test_stateless_session_cookie_expires(monkeypatch):
         auth.require_session(rv_session=sid)
     assert "expired" in str(e.value.detail).lower()
 
+
+def test_login_cookie_is_host_only_and_lax(monkeypatch):
+    from portal.backend.app.routers.auth import LoginRequest, login
+
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_TOKEN", "t0k3n")
+
+    response = Response()
+    payload = LoginRequest(token="t0k3n")
+    out = login(payload, response)
+    assert out == {"ok": True}
+
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert "domain=" not in set_cookie
+    assert "samesite=lax" in set_cookie

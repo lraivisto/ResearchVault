@@ -493,6 +493,7 @@ function ProjectDetail({
   // Ingest State
   const [showIngest, setShowIngest] = useState(false);
   const [ingestUrl, setIngestUrl] = useState('');
+  const [ingestBranch, setIngestBranch] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestAllowPrivate, setIngestAllowPrivate] = useState(false);
 
@@ -663,21 +664,31 @@ function ProjectDetail({
                     className="flex-1 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
                     placeholder="Paste URL (e.g. https://arxiv.org/...)"
                   />
+                  <input
+                    value={ingestBranch}
+                    onChange={e => setIngestBranch(e.target.value)}
+                    className="w-32 p-2 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder:text-gray-400"
+                    placeholder="main"
+                    title="Optional: CLI --branch (default: main). Branch names are case-sensitive."
+                  />
                   <button
                     onClick={async () => {
                       setActionError(null);
                       setIsIngesting(true);
                       try {
-                        const r = await run('/vault/scuttle', { 
-                          id: projectId, 
+                        const b = ingestBranch.trim();
+                        const r = await run('/vault/scuttle', {
+                          id: projectId,
                           url: ingestUrl,
-                          allow_private_networks: ingestAllowPrivate
+                          branch: b ? b : undefined,
+                          allow_private_networks: ingestAllowPrivate,
                         });
                         if (!r.ok) throw new Error(r.stderr || 'vault scuttle failed');
                       } catch (e: unknown) {
                         setActionError(e instanceof Error ? e.message : String(e));
                       }
                       setIngestUrl('');
+                      setIngestBranch('');
                       setIsIngesting(false);
                       setShowIngest(false);
                       setIngestAllowPrivate(false);
@@ -688,6 +699,9 @@ function ProjectDetail({
                   >
                     {isIngesting ? 'Ingesting...' : 'Run Ingest'}
                   </button>
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Optional: set <code>--branch</code> (default: <code>main</code>, case-sensitive).
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <input

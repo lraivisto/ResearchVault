@@ -926,21 +926,24 @@ def update_watch_target_run(
     conn.commit()
     conn.close()
 
-def get_insights(project_id, tag_filter=None, branch: Optional[str] = None):
+def get_insights(project_id, tag_filter=None, branch: Optional[str] = None, limit: Optional[int] = None):
     conn = db.get_connection()
     c = conn.cursor()
     # Migration v2 uses 'findings' table.
     branch_id = resolve_branch_id(project_id, branch)
+    params: List[Any]
     if tag_filter:
-        c.execute(
-            "SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? AND branch_id=? AND tags LIKE ? ORDER BY created_at DESC",
-            (project_id, branch_id, f"%{tag_filter}%"),
-        )
+        query = "SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? AND branch_id=? AND tags LIKE ? ORDER BY created_at DESC"
+        params = [project_id, branch_id, f"%{tag_filter}%"]
     else:
-        c.execute(
-            "SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? AND branch_id=? ORDER BY created_at DESC",
-            (project_id, branch_id),
-        )
+        query = "SELECT title, content, evidence, tags, created_at, confidence FROM findings WHERE project_id=? AND branch_id=? ORDER BY created_at DESC"
+        params = [project_id, branch_id]
+
+    if limit is not None and int(limit) > 0:
+        query += " LIMIT ?"
+        params.append(int(limit))
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     return rows

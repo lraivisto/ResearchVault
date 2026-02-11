@@ -78,6 +78,7 @@ class StatusRequest(BaseModel):
     filter_tag: Optional[str] = None
     branch: Optional[str] = None
     format: Literal["rich", "json"] = "rich"
+    insights_limit: int = Field(default=50, ge=1, le=500)
 
 
 @router.post("/status")
@@ -87,6 +88,7 @@ def vault_status(req: StatusRequest):
         args += ["--filter-tag", req.filter_tag]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--insights-limit", str(req.insights_limit)]
     # Ensure format is always passed
     fmt = req.format if req.format else "json"
     args += ["--format", fmt]
@@ -145,7 +147,7 @@ def vault_log(req: LogRequest):
 
 class SearchRequest(BaseModel):
     query: str
-    set_result: Optional[dict] = None
+    set_result: Optional[dict | str] = None
     format: Literal["rich", "json"] = "json"
 
 
@@ -153,7 +155,10 @@ class SearchRequest(BaseModel):
 def vault_search(req: SearchRequest):
     args = ["search", "--query", req.query]
     if req.set_result is not None:
-        args += ["--set-result", json.dumps(req.set_result)]
+        if isinstance(req.set_result, str):
+            args += ["--set-result", req.set_result]
+        else:
+            args += ["--set-result", json.dumps(req.set_result)]
     args += ["--format", req.format]
     return _run(args, timeout_s=60)
 
@@ -216,6 +221,7 @@ class InsightListRequest(BaseModel):
     filter_tag: Optional[str] = None
     branch: Optional[str] = None
     format: Literal["rich", "json"] = "rich"
+    limit: int = Field(default=200, ge=1, le=1000)
 
 
 @router.post("/insight/list")
@@ -225,6 +231,7 @@ def vault_insight_list(req: InsightListRequest):
         args += ["--filter-tag", req.filter_tag]
     if req.branch:
         args += ["--branch", req.branch]
+    args += ["--limit", str(req.limit)]
     args += ["--format", req.format]
     return _run(args)
 
@@ -543,19 +550,3 @@ def vault_synthesize(req: SynthesizeRequest):
     if req.branch:
         args += ["--branch", req.branch]
     return _run(args, timeout_s=120)
-
-
-class SummaryRequest(BaseModel):
-    id: str
-    branch: Optional[str] = None
-    format: Literal["rich", "json"] = "json"
-
-
-@router.post("/summary")
-def vault_summary(req: SummaryRequest):
-    """Generate an AI summary of project findings."""
-    args = ["summary", "--id", req.id]
-    if req.branch:
-        args += ["--branch", req.branch]
-    args += ["--format", req.format]
-    return _run(args)

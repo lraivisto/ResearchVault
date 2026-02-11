@@ -16,7 +16,7 @@ def test_mcp_server_exposes_tools(tmp_path):
 
         server = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "scripts.mcp_server"],
+            args=["-m", "scripts.services.mcp_server"],
             env=env,
             cwd=os.getcwd(),
             encoding="utf-8",

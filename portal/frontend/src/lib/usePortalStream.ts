@@ -154,7 +154,7 @@ export function usePortalStream(enabled: boolean, handlers: StreamHandlers, inte
       if (ref.current.timer) window.clearTimeout(ref.current.timer);
       if (ref.current.countdownTimer) window.clearInterval(ref.current.countdownTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [enabled, url]);
 
   return status;

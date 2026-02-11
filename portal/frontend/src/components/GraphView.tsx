@@ -104,7 +104,7 @@ export default function GraphView({
 
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId, refreshKey]);
 
   const nodes = graph?.nodes ?? [];

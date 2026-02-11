@@ -226,7 +226,7 @@ function EntryScreen({
     // Populate the table, but do not spam the console.
     // refreshKey ticks whenever the DB changes (SSE pulse) or the user switches DBs.
     handleListProjects(false).catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [refreshKey]);
 
   const recommendedDb = useMemo(() => {
@@ -1073,7 +1073,7 @@ function InsightsPanel({
   useEffect(() => {
     loadInsights();
     loadSummary();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId, refreshKey]);
 
   async function loadSummary() {
@@ -1267,7 +1267,7 @@ function BranchesPanel({
 
   useEffect(() => {
     loadBranches();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId, refreshKey]);
 
   async function loadBranches() {
@@ -1364,7 +1364,7 @@ function VerificationPanel({
 
   useEffect(() => {
     loadMissions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId, refreshKey]);
 
   async function loadMissions({ allowAutoPlan }: { allowAutoPlan?: boolean } = {}) {
@@ -1668,14 +1668,14 @@ function MainApp() {
     if (authState !== 'authed') return;
     refreshDbs();
     refreshSecrets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [authState]);
 
   useEffect(() => {
     if (authState !== 'authed') return;
     if (mode === 'diagnostics') return;
     refreshSecrets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mode]);
 
   if (authState === 'checking') {

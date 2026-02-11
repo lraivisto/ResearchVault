@@ -35,7 +35,7 @@ export default function DecryptedText({
     return () => {
       if (revealRef.current) clearInterval(revealRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [text, animateOnHover]);
 
   const startScramble = () => {

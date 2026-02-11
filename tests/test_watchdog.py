@@ -1,6 +1,6 @@
 import scripts.core as core
 from scripts.scuttle import ArtifactDraft, Connector
-from scripts.watchdog import run_once
+from scripts.services.watchdog import run_once
 
 
 def test_watch_target_dedup_and_list(db_conn):
@@ -59,7 +59,7 @@ def test_watchdog_ingests_url_targets_via_connectors(db_conn, mocker):
 
     service = core.IngestService()
     service.register_connector(MockConnector())
-    mocker.patch("scripts.watchdog.core.get_ingest_service", return_value=service)
+    mocker.patch("scripts.services.watchdog.core.get_ingest_service", return_value=service)
 
     actions = run_once(project_id="p1", limit=5)
     assert any(a.get("id") == tid and a.get("success") is True for a in actions)

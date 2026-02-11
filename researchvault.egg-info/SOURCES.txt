@@ -2,6 +2,15 @@ LICENSE
 README.md
 main.py
 pyproject.toml
+portal/backend/app/auth.py
+portal/backend/app/db_resolver.py
+portal/backend/app/main.py
+portal/backend/app/portal_secrets.py
+portal/backend/app/portal_state.py
+portal/backend/app/vault_exec.py
+portal/backend/app/routers/auth.py
+portal/backend/app/routers/system.py
+portal/backend/app/routers/vault.py
 researchvault.egg-info/PKG-INFO
 researchvault.egg-info/SOURCES.txt
 researchvault.egg-info/dependency_links.txt
@@ -15,6 +24,9 @@ tests/test_grokipedia.py
 tests/test_ingest_service.py
 tests/test_lock.py
 tests/test_mcp_server.py
+tests/test_portal_auth.py
+tests/test_portal_db_resolver.py
+tests/test_portal_logic.py
 tests/test_scrubbing.py
 tests/test_scuttle.py
 tests/test_smoke_cli.py

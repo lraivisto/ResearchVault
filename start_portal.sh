@@ -36,6 +36,14 @@ trap cleanup SIGINT SIGTERM EXIT
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+# Local bind defaults (same-machine usage).
+BACKEND_HOST="${RESEARCHVAULT_PORTAL_HOST:-127.0.0.1}"
+BACKEND_PORT="${RESEARCHVAULT_PORTAL_PORT:-8000}"
+FRONTEND_HOST="${RESEARCHVAULT_PORTAL_FRONTEND_HOST:-127.0.0.1}"
+FRONTEND_PORT="${RESEARCHVAULT_PORTAL_FRONTEND_PORT:-5173}"
+export RESEARCHVAULT_PORTAL_HOST="$BACKEND_HOST"
+export RESEARCHVAULT_PORTAL_PORT="$BACKEND_PORT"
+
 # DB resolution:
 # - If RESEARCHVAULT_DB is already set, respect it.
 # - If exactly one known DB exists, pin to it for consistency.
@@ -93,7 +101,7 @@ echo "════════════════════════�
 echo "  Portal Access Token: $RESEARCHVAULT_PORTAL_TOKEN"
 echo ""
 echo "  To log in, use this URL (token pre-filled):"
-echo "  http://localhost:5173/#token=$RESEARCHVAULT_PORTAL_TOKEN"
+echo "  http://127.0.0.1:$FRONTEND_PORT/#token=$RESEARCHVAULT_PORTAL_TOKEN"
 echo "══════════════════════════════════════════════════════════"
 echo ""
 
@@ -152,7 +160,7 @@ export RESEARCHVAULT_WATCHDOG_INGEST_TOP="${RESEARCHVAULT_WATCHDOG_INGEST_TOP:-2
 export RESEARCHVAULT_VERIFY_INGEST_TOP="${RESEARCHVAULT_VERIFY_INGEST_TOP:-1}"
 
 # Dev CORS defaults (frontend may be opened as localhost or 127.0.0.1).
-export RESEARCHVAULT_PORTAL_CORS_ORIGINS="${RESEARCHVAULT_PORTAL_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
+export RESEARCHVAULT_PORTAL_CORS_ORIGINS="${RESEARCHVAULT_PORTAL_CORS_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}}"
 
 # 1. Backend Setup
 echo "[1/4] Checking Python Dependencies..."
@@ -187,7 +195,6 @@ popd >/dev/null
 echo "[3/4] Launching Backend (FastAPI)..."
 
 # Port conflict check
-BACKEND_PORT=8000
 if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null ; then
     echo "Warning: Port $BACKEND_PORT is already in use."
     echo "Attempting to identify process..."
@@ -200,11 +207,11 @@ fi
 BACKEND_PID=$!
 
 # Wait for backend to be ready.
-python3 - <<'PY'
+python3 - <<PY
 import time
 import urllib.request
 
-url = "http://127.0.0.1:8000/health"
+url = "http://${BACKEND_HOST}:${BACKEND_PORT}/health"
 deadline = time.time() + 20
 while time.time() < deadline:
     try:
@@ -220,22 +227,24 @@ PY
 # 4. Start Frontend
 echo "[4/4] Launching Frontend (Vite)..."
 pushd portal/frontend >/dev/null
-npm run dev -- --port 5173 &
+# Keep frontend pointed at the exact local backend bind.
+export VITE_RESEARCHVAULT_BACKEND_URL="${VITE_RESEARCHVAULT_BACKEND_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}}"
+npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" &
 FRONTEND_PID=$!
 popd >/dev/null
 
 # Wait
-PORTAL_URL="http://localhost:5173/#token=$RESEARCHVAULT_PORTAL_TOKEN"
+PORTAL_URL="http://127.0.0.1:$FRONTEND_PORT/#token=$RESEARCHVAULT_PORTAL_TOKEN"
 echo "Portal is running!"
-echo "Backend:  http://localhost:8000/docs"
-echo "Frontend: http://localhost:5173"
+echo "Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
+echo "Frontend: http://127.0.0.1:${FRONTEND_PORT}"
 echo "Direct:   $PORTAL_URL"
 
 # Auto-open if on macOS/Linux with display
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    open "$PORTAL_URL"
-elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$PORTAL_URL"
+    open "$PORTAL_URL" >/dev/null 2>&1 || true
+elif command -v xdg-open >/dev/null 2>&1 && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+    xdg-open "$PORTAL_URL" >/dev/null 2>&1 || true
 fi
 
 wait

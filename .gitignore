@@ -21,6 +21,12 @@ dist-ssr/
 *.sqlite
 *.sqlite3
 
+# Packaging
+*.egg-info/
+build/
+dist/
+__pycache__/
+
 # Auth
 .portal_auth
 

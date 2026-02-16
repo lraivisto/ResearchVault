@@ -58,7 +58,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install -e .
-          pip install pytest responses pytest-mock
+          pip install pytest responses pytest-mock certifi
 
       - name: Run SSRF Unit Tests
         run: |
@@ -67,6 +67,7 @@ jobs:
       - name: Run CLI Smoke Test
         run: |
           export RESEARCHVAULT_DB=/tmp/ci_vault.db
+          export REQUESTS_CA_BUNDLE=$(python3 -m certifi)
           python3 scripts/vault.py init --id ci-test --objective "CI Verification"
           python3 scripts/vault.py scuttle "https://example.com" --id ci-test
           python3 scripts/vault.py list

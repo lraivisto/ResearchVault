@@ -7,11 +7,6 @@ user-invocable: true
 metadata:
   openclaw:
     emoji: "🦞"
-    install:
-      - id: vault-venv
-        kind: exec
-        command: python3 -m venv .venv && . .venv/bin/activate && pip install -e .
-        label: Initialize ResearchVault (Standard)
     requires:
       python: ">=3.13"
       env:
@@ -30,14 +25,8 @@ metadata:
         RESEARCHVAULT_PORTAL_TOKEN:
           description: "Optional: static portal token. If unset, start_portal.sh sources/generates .portal_auth and exports this env var."
           required: false
-        RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:
-          description: "Optional: set to '1' to request OpenClaw workspace DB scan."
-          required: false
         RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS:
           description: "Optional: comma-separated absolute DB roots. Default: ~/.researchvault,/tmp."
-          required: false
-        RESEARCHVAULT_PORTAL_INJECT_SECRETS:
-          description: "Optional: set to '1' to inject configured provider env vars into vault subprocesses."
           required: false
         RESEARCHVAULT_PORTAL_STATE_DIR:
           description: "Optional: portal state directory (default ~/.researchvault/portal)."
@@ -142,8 +131,8 @@ Start the portal explicitly:
 - `./start_portal.sh` loads/generates `.portal_auth` and exports `RESEARCHVAULT_PORTAL_TOKEN` before backend launch
 - Token login: URL hash `#token=<token>` (token from `.portal_auth`)
 - Allowed DB roots are controlled by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` (default `~/.researchvault,/tmp`)
-- OpenClaw workspace scan is effective only when `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1` and `~/.openclaw/workspace` is inside allowed DB roots
-- Provider secrets are env-only (`BRAVE_API_KEY`, `SERPER_API_KEY`, `SEARXNG_BASE_URL`) and injected into subprocesses only when `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1`
+- OpenClaw workspace DBs are never discovered or selectable in Portal mode
+- Provider secrets are env-only (`BRAVE_API_KEY`, `SERPER_API_KEY`, `SEARXNG_BASE_URL`) and are not injected into vault subprocesses
 - Both hosts are supported for browser access:
   - `http://127.0.0.1:5173/#token=<token>`
   - `http://localhost:5173/#token=<token>`

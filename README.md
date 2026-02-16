@@ -42,9 +42,9 @@ Run the portal manually (nothing auto-starts in the background):
   - `http://localhost:5173/#token=<token>`
 - Tokenized URLs are hidden in terminal output by default; read `.portal_auth` (chmod 600) to paste the token manually, or set `RESEARCHVAULT_PORTAL_SHOW_TOKEN=1` to print tokenized URLs.
 - Allowed DB roots are constrained by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` (default `~/.researchvault,/tmp`).
-- OpenClaw workspace DB discovery is disabled by default; it only becomes effective when `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1` and `~/.openclaw/workspace` is inside allowed DB roots.
+- OpenClaw workspace DB discovery and selection are disabled in Portal mode (paths under `~/.openclaw/workspace` are rejected).
 - Search provider secrets are env-only (read-only in Portal): configure `BRAVE_API_KEY`, `SERPER_API_KEY`, and/or `SEARXNG_BASE_URL` in the backend process environment.
-- Provider secrets are injected into vault subprocesses only when `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1`.
+- Provider secrets are never injected by Portal into vault subprocesses.
 
 Process controls:
 

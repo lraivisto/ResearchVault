@@ -64,9 +64,8 @@ def test_state_json_never_persists_secrets_field(tmp_path, monkeypatch):
     assert "secrets" not in payload
 
 
-def test_vault_subprocess_secret_injection_requires_opt_in(tmp_path, monkeypatch):
+def test_vault_subprocess_never_injects_provider_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
-    monkeypatch.delenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS", raising=False)
     monkeypatch.setenv("BRAVE_API_KEY", "b" * 20)
 
     import portal.backend.app.vault_exec as vault_exec
@@ -93,10 +92,11 @@ def test_vault_subprocess_secret_injection_requires_opt_in(tmp_path, monkeypatch
     assert "BRAVE_API_KEY" not in captured_env
 
 
-def test_vault_subprocess_secret_injection_enabled_opt_in(tmp_path, monkeypatch):
+def test_vault_subprocess_strips_all_provider_envs(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS", "1")
     monkeypatch.setenv("BRAVE_API_KEY", "b" * 20)
+    monkeypatch.setenv("SERPER_API_KEY", "s" * 20)
+    monkeypatch.setenv("SEARXNG_BASE_URL", "https://searx.example")
 
     import portal.backend.app.vault_exec as vault_exec
 
@@ -119,7 +119,9 @@ def test_vault_subprocess_secret_injection_enabled_opt_in(tmp_path, monkeypatch)
 
     assert result.exit_code == 0
     assert captured_env.get("RESEARCHVAULT_DB") == db_path
-    assert captured_env.get("BRAVE_API_KEY") == "b" * 20
+    assert "BRAVE_API_KEY" not in captured_env
+    assert "SERPER_API_KEY" not in captured_env
+    assert "SEARXNG_BASE_URL" not in captured_env
 
 
 def test_scrub_text_redacts_env_and_json_style_secrets():

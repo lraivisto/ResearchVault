@@ -78,6 +78,14 @@ export default function DiagnosticsPanel({
 
   const cliOk = diag?.cli.ok ?? false;
   const hints = diag?.hints ?? [];
+  const persistSecrets = diag?.env.RESEARCHVAULT_PORTAL_PERSIST_SECRETS === '1';
+  const injectSecrets = diag?.env.RESEARCHVAULT_PORTAL_INJECT_SECRETS === '1';
+  const providerSecretMode = persistSecrets
+    ? 'Persisted locally in ~/.researchvault/portal/secrets.json (opt-in enabled).'
+    : 'Not persisted to disk by default. Set RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1 to persist.';
+  const providerInjectionMode = injectSecrets
+    ? 'Injected into vault commands (opt-in enabled).'
+    : 'Not injected into vault commands by default. Set RESEARCHVAULT_PORTAL_INJECT_SECRETS=1 to inject.';
 
   const statusBadge = useMemo(() => {
     if (!diag) return null;
@@ -254,7 +262,7 @@ export default function DiagnosticsPanel({
 
           <div className="bg-void-surface border border-white/10 rounded-lg p-4 lg:col-span-2">
             <div className="text-xs uppercase tracking-wider text-gray-400 font-mono mb-2">Vault Runtime</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <div className="text-[11px] text-gray-500 font-mono">Search provider order</div>
                 <div className="text-xs text-gray-200 font-mono break-all">
@@ -277,6 +285,18 @@ export default function DiagnosticsPanel({
                 <div className="text-[11px] text-gray-500 font-mono">OpenClaw workspace scan</div>
                 <div className="text-xs text-gray-200 font-mono">
                   {diag.env.RESEARCHVAULT_PORTAL_SCAN_OPENCLAW === '1' ? 'enabled (explicit opt-in)' : 'disabled (default)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">Secret persistence</div>
+                <div className="text-xs text-gray-200 font-mono">
+                  {persistSecrets ? 'enabled (explicit opt-in)' : 'disabled (default)'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">Secret env injection</div>
+                <div className="text-xs text-gray-200 font-mono">
+                  {injectSecrets ? 'enabled (explicit opt-in)' : 'disabled (default)'}
                 </div>
               </div>
             </div>
@@ -336,7 +356,7 @@ export default function DiagnosticsPanel({
           </div>
 
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            Stored locally in <span className="text-gray-400">~/.researchvault/portal/secrets.json</span> and injected into vault commands.
+            {providerSecretMode} {providerInjectionMode}
           </div>
         </div>
       )}
@@ -390,7 +410,7 @@ export default function DiagnosticsPanel({
           </div>
 
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            Stored locally in <span className="text-gray-400">~/.researchvault/portal/secrets.json</span> and injected into vault commands.
+            {providerSecretMode} {providerInjectionMode}
           </div>
         </div>
       )}
@@ -450,7 +470,7 @@ export default function DiagnosticsPanel({
           )}
 
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            Stored locally in <span className="text-gray-400">~/.researchvault/portal/secrets.json</span> and injected into vault commands.
+            {providerSecretMode} {providerInjectionMode}
           </div>
         </div>
       )}

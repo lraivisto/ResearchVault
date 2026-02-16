@@ -305,6 +305,32 @@ def system_diagnostics():
             }
         )
 
+    if os.getenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS") == "1":
+        hints.append(
+            {
+                "type": "portal_secret_persistence_enabled",
+                "severity": "low",
+                "title": "Portal secret persistence enabled",
+                "detail": (
+                    "Portal UI secrets are persisted to ~/.researchvault/portal/secrets.json "
+                    "because RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1."
+                ),
+            }
+        )
+
+    if os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS") == "1":
+        hints.append(
+            {
+                "type": "portal_secret_injection_enabled",
+                "severity": "low",
+                "title": "Portal secret injection enabled",
+                "detail": (
+                    "Portal-managed provider secrets are injected into vault subprocesses "
+                    "because RESEARCHVAULT_PORTAL_INJECT_SECRETS=1."
+                ),
+            }
+        )
+
     # If no "strong" provider is configured, searches will fall back to best-effort providers.
     if (not secrets.brave_api_key_configured) and (not secrets.serper_api_key_configured) and (not secrets.searxng_base_url_configured):
         needs_search = False
@@ -336,6 +362,8 @@ def system_diagnostics():
             "RESEARCHVAULT_WATCHDOG_INGEST_TOP": os.getenv("RESEARCHVAULT_WATCHDOG_INGEST_TOP"),
             "RESEARCHVAULT_VERIFY_INGEST_TOP": os.getenv("RESEARCHVAULT_VERIFY_INGEST_TOP"),
             "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW": os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW"),
+            "RESEARCHVAULT_PORTAL_PERSIST_SECRETS": os.getenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS"),
+            "RESEARCHVAULT_PORTAL_INJECT_SECRETS": os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
             "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
             "SERPER_API_KEY_set": bool(os.getenv("SERPER_API_KEY")),

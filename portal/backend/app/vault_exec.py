@@ -24,6 +24,9 @@ class VaultRunResult:
 _SENSITIVE_QS_RE = re.compile(r"([?&](?:api_key|token|auth|key|secret)=)[^&]+", flags=re.I)
 _URL_CREDS_RE = re.compile(r"(https?://)([^/:]+):([^/@]+)@")
 _ABS_PATH_RE = re.compile(r"/(?:Users|home|root|etc|var/log)/[a-zA-Z0-9._/-]+")
+_ENV_SECRET_RE = re.compile(r"\b(BRAVE_API_KEY|SERPER_API_KEY|RESEARCHVAULT_PORTAL_TOKEN)\s*=\s*[^\s]+", flags=re.I)
+_JSON_SECRET_RE = re.compile(r'("(?:api_key|token|secret)"\s*:\s*")[^"]+(")', flags=re.I)
+_AUTHZ_RE = re.compile(r"(Authorization:\s*Bearer\s+)[^\s]+", flags=re.I)
 
 
 def scrub_text(s: str) -> str:
@@ -31,6 +34,9 @@ def scrub_text(s: str) -> str:
         return s
     s = _URL_CREDS_RE.sub(r"\1REDACTED:REDACTED@", s)
     s = _SENSITIVE_QS_RE.sub(r"\1REDACTED", s)
+    s = _ENV_SECRET_RE.sub(lambda m: f"{m.group(1)}=REDACTED", s)
+    s = _JSON_SECRET_RE.sub(r'\1REDACTED\2', s)
+    s = _AUTHZ_RE.sub(r"\1REDACTED", s)
     s = _ABS_PATH_RE.sub("[REDACTED_PATH]", s)
     return s
 

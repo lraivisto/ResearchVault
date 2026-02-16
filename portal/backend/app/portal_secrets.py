@@ -11,10 +11,15 @@ from portal.backend.app.portal_state import state_dir
 
 
 _LOCK = Lock()
+_RUNTIME_SECRETS: dict[str, str] = {}
 
 
 def _secrets_file() -> Path:
     return state_dir() / "secrets.json"
+
+
+def _persist_enabled() -> bool:
+    return os.getenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS") == "1"
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,13 @@ def _write_secrets(data: dict[str, Any]) -> None:
         pass
 
 
+def _runtime_secret(name: str) -> Optional[str]:
+    val = _RUNTIME_SECRETS.get(name)
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    return None
+
+
 def secrets_status() -> SecretsStatus:
     brave_env = os.getenv("BRAVE_API_KEY")
     serper_env = os.getenv("SERPER_API_KEY")
@@ -67,22 +79,29 @@ def secrets_status() -> SecretsStatus:
     searx_val: Optional[str] = searx_env if searx_conf else None
 
     with _LOCK:
-        data = _read_secrets()
+        runtime = dict(_RUNTIME_SECRETS)
+        data = _read_secrets() if _persist_enabled() else {}
 
     if not brave_conf:
-        key = data.get("brave_api_key")
+        key = runtime.get("brave_api_key")
+        if not isinstance(key, str) or not key.strip():
+            key = data.get("brave_api_key")
         if isinstance(key, str) and key.strip():
             brave_conf = True
             brave_src = "portal"
 
     if not serper_conf:
-        key = data.get("serper_api_key")
+        key = runtime.get("serper_api_key")
+        if not isinstance(key, str) or not key.strip():
+            key = data.get("serper_api_key")
         if isinstance(key, str) and key.strip():
             serper_conf = True
             serper_src = "portal"
 
     if not searx_conf:
-        raw = data.get("searxng_base_url")
+        raw = runtime.get("searxng_base_url")
+        if not isinstance(raw, str) or not raw.strip():
+            raw = data.get("searxng_base_url")
         if isinstance(raw, str) and raw.strip():
             searx_conf = True
             searx_src = "portal"
@@ -111,10 +130,14 @@ def get_brave_api_key() -> Optional[str]:
         return env
 
     with _LOCK:
-        data = _read_secrets()
-        key = data.get("brave_api_key")
-        if isinstance(key, str) and key.strip():
-            return key.strip()
+        runtime = _runtime_secret("brave_api_key")
+        if runtime:
+            return runtime
+        if _persist_enabled():
+            data = _read_secrets()
+            key = data.get("brave_api_key")
+            if isinstance(key, str) and key.strip():
+                return key.strip()
     return None
 
 
@@ -124,29 +147,27 @@ def set_brave_api_key(api_key: str) -> SecretsStatus:
         raise ValueError("api_key must be non-empty")
 
     with _LOCK:
-        data = _read_secrets()
-        data["brave_api_key"] = key
-        _write_secrets(data)
-
-    # Make it immediately available to the current backend process too.
-    os.environ["BRAVE_API_KEY"] = key
+        _RUNTIME_SECRETS["brave_api_key"] = key
+        if _persist_enabled():
+            data = _read_secrets()
+            data["brave_api_key"] = key
+            _write_secrets(data)
     return secrets_status()
 
 
 def clear_brave_api_key() -> SecretsStatus:
     with _LOCK:
-        data = _read_secrets()
-        data.pop("brave_api_key", None)
-        if data:
-            _write_secrets(data)
-        else:
-            try:
-                _secrets_file().unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    # Clear from the backend process env (this does not affect the user's shell).
-    os.environ.pop("BRAVE_API_KEY", None)
+        _RUNTIME_SECRETS.pop("brave_api_key", None)
+        if _persist_enabled():
+            data = _read_secrets()
+            data.pop("brave_api_key", None)
+            if data:
+                _write_secrets(data)
+            else:
+                try:
+                    _secrets_file().unlink(missing_ok=True)
+                except Exception:
+                    pass
     return secrets_status()
 
 
@@ -156,10 +177,14 @@ def get_serper_api_key() -> Optional[str]:
         return env
 
     with _LOCK:
-        data = _read_secrets()
-        key = data.get("serper_api_key")
-        if isinstance(key, str) and key.strip():
-            return key.strip()
+        runtime = _runtime_secret("serper_api_key")
+        if runtime:
+            return runtime
+        if _persist_enabled():
+            data = _read_secrets()
+            key = data.get("serper_api_key")
+            if isinstance(key, str) and key.strip():
+                return key.strip()
     return None
 
 
@@ -169,27 +194,27 @@ def set_serper_api_key(api_key: str) -> SecretsStatus:
         raise ValueError("api_key must be non-empty")
 
     with _LOCK:
-        data = _read_secrets()
-        data["serper_api_key"] = key
-        _write_secrets(data)
-
-    os.environ["SERPER_API_KEY"] = key
+        _RUNTIME_SECRETS["serper_api_key"] = key
+        if _persist_enabled():
+            data = _read_secrets()
+            data["serper_api_key"] = key
+            _write_secrets(data)
     return secrets_status()
 
 
 def clear_serper_api_key() -> SecretsStatus:
     with _LOCK:
-        data = _read_secrets()
-        data.pop("serper_api_key", None)
-        if data:
-            _write_secrets(data)
-        else:
-            try:
-                _secrets_file().unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    os.environ.pop("SERPER_API_KEY", None)
+        _RUNTIME_SECRETS.pop("serper_api_key", None)
+        if _persist_enabled():
+            data = _read_secrets()
+            data.pop("serper_api_key", None)
+            if data:
+                _write_secrets(data)
+            else:
+                try:
+                    _secrets_file().unlink(missing_ok=True)
+                except Exception:
+                    pass
     return secrets_status()
 
 
@@ -199,10 +224,14 @@ def get_searxng_base_url() -> Optional[str]:
         return env.strip()
 
     with _LOCK:
-        data = _read_secrets()
-        raw = data.get("searxng_base_url")
-        if isinstance(raw, str) and raw.strip():
-            return raw.strip()
+        runtime = _runtime_secret("searxng_base_url")
+        if runtime:
+            return runtime
+        if _persist_enabled():
+            data = _read_secrets()
+            raw = data.get("searxng_base_url")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
     return None
 
 
@@ -212,25 +241,25 @@ def set_searxng_base_url(url: str) -> SecretsStatus:
         raise ValueError("base_url must be non-empty")
 
     with _LOCK:
-        data = _read_secrets()
-        data["searxng_base_url"] = val
-        _write_secrets(data)
-
-    os.environ["SEARXNG_BASE_URL"] = val
+        _RUNTIME_SECRETS["searxng_base_url"] = val
+        if _persist_enabled():
+            data = _read_secrets()
+            data["searxng_base_url"] = val
+            _write_secrets(data)
     return secrets_status()
 
 
 def clear_searxng_base_url() -> SecretsStatus:
     with _LOCK:
-        data = _read_secrets()
-        data.pop("searxng_base_url", None)
-        if data:
-            _write_secrets(data)
-        else:
-            try:
-                _secrets_file().unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    os.environ.pop("SEARXNG_BASE_URL", None)
+        _RUNTIME_SECRETS.pop("searxng_base_url", None)
+        if _persist_enabled():
+            data = _read_secrets()
+            data.pop("searxng_base_url", None)
+            if data:
+                _write_secrets(data)
+            else:
+                try:
+                    _secrets_file().unlink(missing_ok=True)
+                except Exception:
+                    pass
     return secrets_status()

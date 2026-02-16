@@ -39,6 +39,9 @@ Run the portal manually (nothing auto-starts in the background):
 - Use either host for login links:
   - `http://127.0.0.1:5173/#token=<token>`
   - `http://localhost:5173/#token=<token>`
+- OpenClaw workspace DB discovery is disabled by default; set `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1` to opt in.
+- Portal-entered search provider secrets are not persisted by default; set `RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1` to persist in `~/.researchvault/portal/secrets.json`.
+- Portal-entered secrets are not injected into vault subprocesses by default; set `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1` to inject.
 
 Process controls:
 

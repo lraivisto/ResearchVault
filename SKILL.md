@@ -4,71 +4,89 @@ description: "Local-first research orchestration engine. Manages state, synthesi
 homepage: https://github.com/lraivisto/ResearchVault
 disable-model-invocation: true
 user-invocable: true
-install:
-  - id: vault-venv
-    kind: exec
-    command: python3 -m venv .venv && . .venv/bin/activate && pip install -e .
-    label: Initialize ResearchVault (Standard)
-env:
-  RESEARCHVAULT_DB:
-    description: "Optional: Custom path to the SQLite database file."
-    required: false
-  RESEARCHVAULT_PORTAL_TOKEN:
-    description: "Optional: Static token for Portal authentication. If unset, start_portal.sh generates .portal_auth and exports this variable for the backend."
-    required: false
-  BRAVE_API_KEY:
-    description: "Optional: API key for Brave Search."
-    required: false
-  SERPER_API_KEY:
-    description: "Optional: API key for Serper.dev search."
-    required: false
-  SEARXNG_BASE_URL:
-    description: "Optional: Base URL for a SearXNG instance."
-    required: false
-  RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:
-    description: "Optional: Set to '1' to allow Portal DB discovery and DB selection under ~/.openclaw/workspace."
-    required: false
-  RESEARCHVAULT_PORTAL_PERSIST_SECRETS:
-    description: "Optional: Set to '1' to persist Portal-entered provider secrets to ~/.researchvault/portal/secrets.json."
-    required: false
-  RESEARCHVAULT_PORTAL_INJECT_SECRETS:
-    description: "Optional: Set to '1' to inject Portal-managed provider secrets into vault subprocess environments."
-    required: false
-  RESEARCHVAULT_PORTAL_STATE_DIR:
-    description: "Optional: Directory for portal local state and secrets files (default ~/.researchvault/portal)."
-    required: false
-  RESEARCHVAULT_PORTAL_ALLOW_ANY_DB:
-    description: "Optional: Set to 'true' to bypass DB path allowlist checks."
-    required: false
-  RESEARCHVAULT_PORTAL_HOST:
-    description: "Optional: Portal backend bind host (default 127.0.0.1)."
-    required: false
-  RESEARCHVAULT_PORTAL_PORT:
-    description: "Optional: Portal backend port (default 8000)."
-    required: false
-  RESEARCHVAULT_PORTAL_FRONTEND_HOST:
-    description: "Optional: Portal frontend bind host (default 127.0.0.1)."
-    required: false
-  RESEARCHVAULT_PORTAL_FRONTEND_PORT:
-    description: "Optional: Portal frontend port (default 5173)."
-    required: false
-  RESEARCHVAULT_PORTAL_CORS_ORIGINS:
-    description: "Optional: Comma-separated allowed CORS origins for the backend."
-    required: false
-  RESEARCHVAULT_PORTAL_RELOAD:
-    description: "Optional: Set to 'true' to enable backend auto-reload (default true)."
-    required: false
-  RESEARCHVAULT_PORTAL_COOKIE_SECURE:
-    description: "Optional: Set to 'true' to mark auth cookies as Secure."
-    required: false
-  RESEARCHVAULT_PORTAL_PID_DIR:
-    description: "Optional: Directory used by start_portal.sh for PID/log files."
-    required: false
 metadata:
   openclaw:
     emoji: "🦞"
+    install:
+      - id: vault-venv
+        kind: exec
+        command: python3 -m venv .venv && . .venv/bin/activate && pip install -e .
+        label: Initialize ResearchVault (Standard)
     requires:
       python: ">=3.13"
+      env:
+        RESEARCHVAULT_DB:
+          description: "Optional: Custom path to the SQLite database file."
+          required: false
+        BRAVE_API_KEY:
+          description: "Optional: Brave Search API key."
+          required: false
+        SERPER_API_KEY:
+          description: "Optional: Serper API key."
+          required: false
+        SEARXNG_BASE_URL:
+          description: "Optional: SearXNG base URL."
+          required: false
+        RESEARCHVAULT_PORTAL_TOKEN:
+          description: "Optional: static portal token. If unset, start_portal.sh sources/generates .portal_auth and exports this env var."
+          required: false
+        RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:
+          description: "Optional: set to '1' to request OpenClaw workspace DB scan."
+          required: false
+        RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS:
+          description: "Optional: comma-separated absolute DB roots. Default: ~/.researchvault,/tmp."
+          required: false
+        RESEARCHVAULT_PORTAL_INJECT_SECRETS:
+          description: "Optional: set to '1' to inject configured provider env vars into vault subprocesses."
+          required: false
+        RESEARCHVAULT_PORTAL_STATE_DIR:
+          description: "Optional: portal state directory (default ~/.researchvault/portal)."
+          required: false
+        RESEARCHVAULT_PORTAL_HOST:
+          description: "Optional: backend bind host."
+          required: false
+        RESEARCHVAULT_PORTAL_PORT:
+          description: "Optional: backend bind port."
+          required: false
+        RESEARCHVAULT_PORTAL_FRONTEND_HOST:
+          description: "Optional: frontend bind host."
+          required: false
+        RESEARCHVAULT_PORTAL_FRONTEND_PORT:
+          description: "Optional: frontend bind port."
+          required: false
+        RESEARCHVAULT_PORTAL_CORS_ORIGINS:
+          description: "Optional: comma-separated CORS origins for backend."
+          required: false
+        RESEARCHVAULT_PORTAL_RELOAD:
+          description: "Optional: set to 'true' for backend auto-reload."
+          required: false
+        RESEARCHVAULT_PORTAL_COOKIE_SECURE:
+          description: "Optional: set to 'true' to mark auth cookie Secure."
+          required: false
+        RESEARCHVAULT_PORTAL_PID_DIR:
+          description: "Optional: start_portal.sh PID/log directory."
+          required: false
+        RESEARCHVAULT_PORTAL_SHOW_TOKEN:
+          description: "Optional: set to '1' to print tokenized portal URLs."
+          required: false
+        RESEARCHVAULT_SEARCH_PROVIDERS:
+          description: "Optional: search provider order override."
+          required: false
+        RESEARCHVAULT_WATCHDOG_INGEST_TOP:
+          description: "Optional: watchdog ingest top-k override."
+          required: false
+        RESEARCHVAULT_VERIFY_INGEST_TOP:
+          description: "Optional: verify ingest top-k override."
+          required: false
+        RESEARCHVAULT_MCP_TRANSPORT:
+          description: "Optional: MCP server transport override."
+          required: false
+        REQUESTS_CA_BUNDLE:
+          description: "Optional: custom CA bundle for HTTPS verification."
+          required: false
+        SSL_CERT_FILE:
+          description: "Optional: custom CA certificate file."
+          required: false
 ---
 
 # ResearchVault 🦞
@@ -123,6 +141,9 @@ Start the portal explicitly:
 - Backend auth strictly uses `RESEARCHVAULT_PORTAL_TOKEN`
 - `./start_portal.sh` loads/generates `.portal_auth` and exports `RESEARCHVAULT_PORTAL_TOKEN` before backend launch
 - Token login: URL hash `#token=<token>` (token from `.portal_auth`)
+- Allowed DB roots are controlled by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` (default `~/.researchvault,/tmp`)
+- OpenClaw workspace scan is effective only when `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1` and `~/.openclaw/workspace` is inside allowed DB roots
+- Provider secrets are env-only (`BRAVE_API_KEY`, `SERPER_API_KEY`, `SEARXNG_BASE_URL`) and injected into subprocesses only when `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1`
 - Both hosts are supported for browser access:
   - `http://127.0.0.1:5173/#token=<token>`
   - `http://localhost:5173/#token=<token>`

@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.0.2] - 2026-02-16
+
+### Security
+- Registry manifest transparency: surfaced `install` and full optional `env` map as top-level `SKILL.md` frontmatter fields to eliminate hidden install/env metadata mismatch.
+- OpenClaw DB scope tightened by default: portal candidate discovery and DB selection under `~/.openclaw/workspace` now require explicit `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1`.
+- Secrets handling made explicit: portal-entered provider secrets are in-memory by default, persist only with `RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1`, and inject into subprocess env only with `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1`.
+- Portal auth consistency: backend remains strict on `RESEARCHVAULT_PORTAL_TOKEN`; `start_portal.sh` now always initializes/exports the token from `.portal_auth` and avoids printing tokenized URLs unless explicitly requested.
+- Added regression tests for OpenClaw scan gating, DB allowlist behavior, token strictness, and secret persistence/injection controls.
+
 ## [2.6.2] - 2026-02-10
 
 ### Security

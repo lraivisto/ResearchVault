@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,13 @@ app.include_router(system_router.router, prefix="/api", tags=["system"])
 app.include_router(vault_router.router, prefix="/api", tags=["vault"])
 
 
+def _app_version() -> str:
+    try:
+        return str(pkg_version("researchvault"))
+    except PackageNotFoundError:
+        return "unknown"
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": _app_version()}

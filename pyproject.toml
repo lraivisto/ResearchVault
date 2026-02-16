@@ -1,6 +1,6 @@
 [project]
 name = "researchvault"
-version = "3.0.2"
+version = "3.0.3"
 description = "Local-first orchestration engine for high-velocity AI research"
 authors = [
     { name = "lraivisto", email = "lraivisto@outlook.com" }

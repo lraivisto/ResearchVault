@@ -33,6 +33,21 @@ metadata:
                     "description": "Optional: API key for live web search and verification. Set in skills.entries.researchvault.env.BRAVE_API_KEY.",
                     "required": false,
                   },
+                "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to scan ~/.openclaw/workspace/memory for vault databases.",
+                    "required": false,
+                  },
+                "RESEARCHVAULT_PORTAL_PERSIST_SECRETS":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to persist entered API keys to local state.json.",
+                    "required": false,
+                  },
+                "RESEARCHVAULT_PORTAL_INJECT_SECRETS":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to inject secrets into vault subprocesses.",
+                    "required": false,
+                  },
               },
           },
       },

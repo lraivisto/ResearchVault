@@ -169,8 +169,10 @@ def discover_candidate_paths() -> List[str]:
     # "Nearby" vaults (lightweight globbing; do not recurse).
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.db")])
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.sqlite*")])
-    paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.db")])
-    paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.sqlite*")])
+
+    if os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW") == "1":
+        paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.db")])
+        paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.sqlite*")])
 
     return _dedup_paths(paths)
 

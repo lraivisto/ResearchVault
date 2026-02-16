@@ -66,6 +66,9 @@ def run_vault(
     env.setdefault("NO_COLOR", "1")
     env.setdefault("RICH_NO_COLOR", "1")
     env.setdefault("TERM", "dumb")
+    env.pop("BRAVE_API_KEY", None)
+    env.pop("SERPER_API_KEY", None)
+    env.pop("SEARXNG_BASE_URL", None)
 
     # Portal defaults: make watchdog/verify produce real findings by ingesting top URLs from search results.
     # Users can override via environment variables if they want lighter/faster runs.
@@ -80,21 +83,17 @@ def run_vault(
     # SECRETS INJECTION: Default MUST NOT inject portal secrets into subprocess env.
     # Explicit opt-in required via RESEARCHVAULT_PORTAL_INJECT_SECRETS=1.
     if os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS") == "1":
-        # Allow portal-configured secrets (e.g. Brave API key) to drive research commands.
-        if not env.get("BRAVE_API_KEY"):
-            brave = get_brave_api_key()
-            if brave:
-                env["BRAVE_API_KEY"] = brave
+        brave = get_brave_api_key()
+        if brave:
+            env["BRAVE_API_KEY"] = brave
 
-        if not env.get("SERPER_API_KEY"):
-            serper = get_serper_api_key()
-            if serper:
-                env["SERPER_API_KEY"] = serper
+        serper = get_serper_api_key()
+        if serper:
+            env["SERPER_API_KEY"] = serper
 
-        if not env.get("SEARXNG_BASE_URL"):
-            searx = get_searxng_base_url()
-            if searx:
-                env["SEARXNG_BASE_URL"] = searx
+        searx = get_searxng_base_url()
+        if searx:
+            env["SEARXNG_BASE_URL"] = searx
 
     argv = [sys.executable, "-m", "scripts.vault", *args]
 

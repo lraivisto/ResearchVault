@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 
-import type { DiagnosticsResponse, DiagnosticsHint, SecretsStatusResponse } from '@/lib/api';
-import { systemGet, systemPost } from '@/lib/api';
+import type { DiagnosticsResponse, DiagnosticsHint } from '@/lib/api';
+import { systemGet } from '@/lib/api';
 
 function isOpenClawPath(path: string): boolean {
   return (path || '').includes('/.openclaw/workspace/');
@@ -51,12 +51,6 @@ export default function DiagnosticsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [diag, setDiag] = useState<DiagnosticsResponse | null>(null);
-  const [braveKey, setBraveKey] = useState('');
-  const [savingBrave, setSavingBrave] = useState(false);
-  const [serperKey, setSerperKey] = useState('');
-  const [savingSerper, setSavingSerper] = useState(false);
-  const [searxngUrl, setSearxngUrl] = useState('');
-  const [savingSearxng, setSavingSearxng] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -78,11 +72,8 @@ export default function DiagnosticsPanel({
 
   const cliOk = diag?.cli.ok ?? false;
   const hints = diag?.hints ?? [];
-  const persistSecrets = diag?.env.RESEARCHVAULT_PORTAL_PERSIST_SECRETS === '1';
   const injectSecrets = diag?.env.RESEARCHVAULT_PORTAL_INJECT_SECRETS === '1';
-  const providerSecretMode = persistSecrets
-    ? 'Persisted locally in ~/.researchvault/portal/secrets.json (opt-in enabled).'
-    : 'Not persisted to disk by default. Set RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1 to persist.';
+  const providerSecretMode = 'Read-only from backend process environment variables (no portal secret writes).';
   const providerInjectionMode = injectSecrets
     ? 'Injected into vault commands (opt-in enabled).'
     : 'Not injected into vault commands by default. Set RESEARCHVAULT_PORTAL_INJECT_SECRETS=1 to inject.';
@@ -104,90 +95,6 @@ export default function DiagnosticsPanel({
       </div>
     );
   }, [cliOk, diag, hints.length]);
-
-  async function saveBrave() {
-    if (!braveKey.trim()) return;
-    setSavingBrave(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/brave', { api_key: braveKey.trim() });
-      setBraveKey('');
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingBrave(false);
-    }
-  }
-
-  async function clearBrave() {
-    setSavingBrave(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/brave/clear', {});
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingBrave(false);
-    }
-  }
-
-  async function saveSerper() {
-    if (!serperKey.trim()) return;
-    setSavingSerper(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/serper', { api_key: serperKey.trim() });
-      setSerperKey('');
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingSerper(false);
-    }
-  }
-
-  async function clearSerper() {
-    setSavingSerper(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/serper/clear', {});
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingSerper(false);
-    }
-  }
-
-  async function saveSearxng() {
-    if (!searxngUrl.trim()) return;
-    setSavingSearxng(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/searxng', { base_url: searxngUrl.trim() });
-      setSearxngUrl('');
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingSearxng(false);
-    }
-  }
-
-  async function clearSearxng() {
-    setSavingSearxng(true);
-    setError(null);
-    try {
-      await systemPost<SecretsStatusResponse>('/secrets/searxng/clear', {});
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingSearxng(false);
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -288,9 +195,11 @@ export default function DiagnosticsPanel({
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-gray-500 font-mono">Secret persistence</div>
+                <div className="text-[11px] text-gray-500 font-mono">Allowed DB roots</div>
                 <div className="text-xs text-gray-200 font-mono">
-                  {persistSecrets ? 'enabled (explicit opt-in)' : 'disabled (default)'}
+                  {(diag.env.effective_allowed_db_roots && diag.env.effective_allowed_db_roots.length > 0)
+                    ? diag.env.effective_allowed_db_roots.join(', ')
+                    : (diag.env.RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS || '~/.researchvault,/tmp')}
                 </div>
               </div>
               <div>
@@ -327,36 +236,12 @@ export default function DiagnosticsPanel({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              type="password"
-              value={braveKey}
-              onChange={(e) => setBraveKey(e.target.value)}
-              placeholder="Paste BRAVE_API_KEY"
-              className="flex-1 bg-void border border-white/10 rounded px-3 py-2 text-sm text-gray-100 font-mono placeholder:text-gray-600"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={saveBrave}
-                disabled={savingBrave || !braveKey.trim()}
-                className="text-xs font-mono px-3 py-2 rounded border border-cyan text-cyan bg-cyan-dim disabled:opacity-50"
-              >
-                Save Key
-              </button>
-              <button
-                type="button"
-                onClick={clearBrave}
-                disabled={savingBrave}
-                className="text-xs font-mono px-3 py-2 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-50"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            {providerSecretMode} {providerInjectionMode}
+            {providerSecretMode}
+            {' '}
+            Configure via process env: <span className="text-gray-300">BRAVE_API_KEY</span>.
+            {' '}
+            {providerInjectionMode}
           </div>
         </div>
       )}
@@ -381,36 +266,12 @@ export default function DiagnosticsPanel({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              type="password"
-              value={serperKey}
-              onChange={(e) => setSerperKey(e.target.value)}
-              placeholder="Paste SERPER_API_KEY"
-              className="flex-1 bg-void border border-white/10 rounded px-3 py-2 text-sm text-gray-100 font-mono placeholder:text-gray-600"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={saveSerper}
-                disabled={savingSerper || !serperKey.trim()}
-                className="text-xs font-mono px-3 py-2 rounded border border-cyan text-cyan bg-cyan-dim disabled:opacity-50"
-              >
-                Save Key
-              </button>
-              <button
-                type="button"
-                onClick={clearSerper}
-                disabled={savingSerper}
-                className="text-xs font-mono px-3 py-2 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-50"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            {providerSecretMode} {providerInjectionMode}
+            {providerSecretMode}
+            {' '}
+            Configure via process env: <span className="text-gray-300">SERPER_API_KEY</span>.
+            {' '}
+            {providerInjectionMode}
           </div>
         </div>
       )}
@@ -435,34 +296,6 @@ export default function DiagnosticsPanel({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              type="text"
-              value={searxngUrl}
-              onChange={(e) => setSearxngUrl(e.target.value)}
-              placeholder="SEARXNG_BASE_URL (e.g. https://searx.example.com)"
-              className="flex-1 bg-void border border-white/10 rounded px-3 py-2 text-sm text-gray-100 font-mono placeholder:text-gray-600"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={saveSearxng}
-                disabled={savingSearxng || !searxngUrl.trim()}
-                className="text-xs font-mono px-3 py-2 rounded border border-cyan text-cyan bg-cyan-dim disabled:opacity-50"
-              >
-                Save URL
-              </button>
-              <button
-                type="button"
-                onClick={clearSearxng}
-                disabled={savingSearxng}
-                className="text-xs font-mono px-3 py-2 rounded border border-white/10 text-gray-300 hover:text-white hover:border-white/20 disabled:opacity-50"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
           {diag.providers.searxng?.base_url && (
             <div className="mt-2 text-[11px] text-gray-500 font-mono break-all">
               current: <span className="text-gray-400">{diag.providers.searxng.base_url}</span>
@@ -470,7 +303,11 @@ export default function DiagnosticsPanel({
           )}
 
           <div className="mt-2 text-[11px] text-gray-500 font-mono">
-            {providerSecretMode} {providerInjectionMode}
+            {providerSecretMode}
+            {' '}
+            Configure via process env: <span className="text-gray-300">SEARXNG_BASE_URL</span>.
+            {' '}
+            {providerInjectionMode}
           </div>
         </div>
       )}

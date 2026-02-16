@@ -297,14 +297,36 @@ run_start() {
 
   # DB resolution:
   # - If RESEARCHVAULT_DB is already set, respect it.
-  # - OpenClaw workspace DB scope is explicit opt-in (RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1).
+  # - OpenClaw workspace DB scope requires explicit opt-in (RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1)
+  #   and allowed DB roots (RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS).
   # - By default, pin to ~/.researchvault/research_vault.db.
   if [ -z "${RESEARCHVAULT_DB:-}" ]; then
     LEGACY_DB="$HOME/.openclaw/workspace/memory/research_vault.db"
+    OPENCLAW_ROOT="$HOME/.openclaw/workspace"
     DEFAULT_DB="$HOME/.researchvault/research_vault.db"
     LEGACY_EXISTS="false"
     DEFAULT_EXISTS="false"
     OPENCLAW_SCAN="${RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:-0}"
+    export OPENCLAW_ROOT
+    export RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS="${RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS:-$HOME/.researchvault,/tmp}"
+    OPENCLAW_ALLOWED="$(
+      python3 - <<'PY'
+import os
+
+target = os.path.realpath(os.path.expanduser(os.environ["OPENCLAW_ROOT"]))
+raw = os.environ.get("RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS", "")
+allowed = False
+for part in raw.split(","):
+    p = part.strip()
+    if not p:
+        continue
+    p = os.path.realpath(os.path.expanduser(p))
+    if target == p or target.startswith(p + os.sep):
+        allowed = True
+        break
+print("1" if allowed else "0")
+PY
+    )"
 
     if [ -f "$LEGACY_DB" ]; then LEGACY_EXISTS="true"; fi
     if [ -f "$DEFAULT_DB" ]; then DEFAULT_EXISTS="true"; fi
@@ -313,20 +335,21 @@ run_start() {
       echo "Using default database: $DEFAULT_DB"
       export RESEARCHVAULT_DB="$DEFAULT_DB"
     elif [ "$DEFAULT_EXISTS" = "false" ] && [ "$LEGACY_EXISTS" = "true" ]; then
-      if [ "$OPENCLAW_SCAN" = "1" ]; then
+      if [ "$OPENCLAW_SCAN" = "1" ] && [ "$OPENCLAW_ALLOWED" = "1" ]; then
         echo "Using OpenClaw legacy database (scan enabled): $LEGACY_DB"
         export RESEARCHVAULT_DB="$LEGACY_DB"
       else
-        echo "Legacy OpenClaw DB detected, but OpenClaw scan is disabled by default."
+        echo "Legacy OpenClaw DB detected, but OpenClaw scanning is not effective."
+        echo "Require both: RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 and an allowed root that contains $OPENCLAW_ROOT."
         echo "Using default path instead: $DEFAULT_DB"
-        echo "Set RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 to opt in to OpenClaw workspace DB access."
+        echo "Current allowed roots: $RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS"
         export RESEARCHVAULT_DB="$DEFAULT_DB"
       fi
     elif [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "true" ]; then
-      if [ "$OPENCLAW_SCAN" = "1" ]; then
+      if [ "$OPENCLAW_SCAN" = "1" ] && [ "$OPENCLAW_ALLOWED" = "1" ]; then
         echo "Multiple vault DBs detected (default + OpenClaw scan enabled)."
       else
-        echo "Multiple DBs detected; OpenClaw scan is disabled. Using default DB: $DEFAULT_DB"
+        echo "Multiple DBs detected; OpenClaw scan is not effective under current allowed roots. Using default DB: $DEFAULT_DB"
         export RESEARCHVAULT_DB="$DEFAULT_DB"
       fi
     else

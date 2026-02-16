@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import scripts.db as vault_db
 
+from portal.backend.app.db_roots import allowed_db_roots, path_within_allowed_roots
 from portal.backend.app.portal_state import get_selected_db_path
 
 OPENCLAW_WORKSPACE_ROOT = Path(os.path.expanduser("~/.openclaw/workspace")).resolve()
@@ -154,8 +155,26 @@ def _dedup_paths(paths: Iterable[str]) -> List[str]:
     return out
 
 
-def openclaw_scan_enabled() -> bool:
+def _allowed_path(path: str) -> bool:
+    return path_within_allowed_roots(Path(os.path.expanduser(path)))
+
+
+def _fallback_default_db_path() -> str:
+    default = _expand_abs(vault_db.DEFAULT_DB_PATH)
+    if _allowed_path(default):
+        return default
+    roots = allowed_db_roots()
+    if roots:
+        return str((roots[0] / Path(default).name).resolve())
+    return default
+
+
+def openclaw_scan_requested() -> bool:
     return os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW") == "1"
+
+
+def openclaw_scan_enabled() -> bool:
+    return openclaw_scan_requested() and path_within_allowed_roots(OPENCLAW_WORKSPACE_ROOT)
 
 
 def openclaw_workspace_root() -> Path:
@@ -175,15 +194,16 @@ def discover_candidate_paths() -> List[str]:
     paths: List[str] = []
 
     selected = get_selected_db_path()
-    if selected:
+    if selected and _allowed_path(selected):
         paths.append(selected)
 
     env = os.getenv("RESEARCHVAULT_DB")
-    if env:
+    if env and _allowed_path(env):
         paths.append(env)
 
-    # Known defaults (kept in scripts.db for consistency).
-    paths.append(vault_db.DEFAULT_DB_PATH)
+    # Known defaults (kept in scripts.db for consistency) if allowed by root policy.
+    if _allowed_path(vault_db.DEFAULT_DB_PATH):
+        paths.append(vault_db.DEFAULT_DB_PATH)
 
     # "Nearby" vaults (lightweight globbing; do not recurse).
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.db")])
@@ -194,7 +214,7 @@ def discover_candidate_paths() -> List[str]:
         paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.db")])
         paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.sqlite*")])
 
-    return _dedup_paths(paths)
+    return [p for p in _dedup_paths(paths) if _allowed_path(p)]
 
 
 def list_db_candidates() -> List[DbCandidate]:
@@ -225,7 +245,7 @@ def resolve_current_db() -> Tuple[ResolvedDb, List[DbCandidate]]:
 def resolve_effective_db() -> ResolvedDb:
     """Resolve the effective DB path without doing a full candidate scan."""
     selected = get_selected_db_path()
-    if selected:
+    if selected and _allowed_path(selected):
         p = _expand_abs(selected)
         exists = Path(p).exists()
         note = "User-selected DB path (persisted)."
@@ -234,7 +254,7 @@ def resolve_effective_db() -> ResolvedDb:
         return ResolvedDb(path=p, source="selected", note=note)
 
     env = os.getenv("RESEARCHVAULT_DB")
-    if env:
+    if env and _allowed_path(env):
         p = _expand_abs(env)
         exists = Path(p).exists()
         note = "From RESEARCHVAULT_DB environment variable."
@@ -242,23 +262,22 @@ def resolve_effective_db() -> ResolvedDb:
             note += " (DB file does not exist yet; it will be created on first write.)"
         return ResolvedDb(path=p, source="env", note=note)
 
-    default = inspect_db(vault_db.DEFAULT_DB_PATH)
+    default = inspect_db(vault_db.DEFAULT_DB_PATH) if _allowed_path(vault_db.DEFAULT_DB_PATH) else inspect_db(_fallback_default_db_path())
 
     if not openclaw_scan_enabled():
         if default.exists:
             return ResolvedDb(path=default.path, source="auto", note="Only default DB exists.")
-        if Path(_expand_abs(vault_db.LEGACY_DB_PATH)).exists():
+        if Path(_expand_abs(vault_db.LEGACY_DB_PATH)).exists() and openclaw_scan_requested():
             return ResolvedDb(
-                path=_expand_abs(vault_db.DEFAULT_DB_PATH),
+                path=_fallback_default_db_path(),
                 source="auto",
                 note=(
-                    "Defaulting to ~/.researchvault/research_vault.db. "
-                    "OpenClaw workspace DB discovery is disabled by default "
-                    "(set RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 to opt in)."
+                    "Defaulting to allowed DB roots. OpenClaw workspace DB discovery was requested "
+                    "but is not effective because ~/.openclaw/workspace is outside RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS."
                 ),
             )
         return ResolvedDb(
-            path=_expand_abs(vault_db.DEFAULT_DB_PATH),
+            path=_fallback_default_db_path(),
             source="auto",
             note="No existing DB found; default path will be created on first write.",
         )
@@ -287,7 +306,7 @@ def resolve_effective_db() -> ResolvedDb:
         )
 
     return ResolvedDb(
-        path=_expand_abs(vault_db.DEFAULT_DB_PATH),
+        path=_fallback_default_db_path(),
         source="auto",
         note="No existing DB found; default path will be created on first write.",
     )

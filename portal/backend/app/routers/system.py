@@ -15,13 +15,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from portal.backend.app.auth import require_session
+from portal.backend.app.db_roots import allowed_db_roots_as_strings, path_within_allowed_roots
 from portal.backend.app.db_resolver import (
     candidates_as_dict,
     inspect_db,
-    is_within_openclaw_workspace,
     now_ms,
     openclaw_scan_enabled,
-    openclaw_workspace_root,
+    openclaw_scan_requested,
     resolve_current_db,
     resolve_effective_db,
     resolved_as_dict,
@@ -62,29 +62,7 @@ def _table_exists(cursor: sqlite3.Cursor, table: str) -> bool:
 
 
 def _allowed_db_path(p: Path) -> bool:
-    if os.getenv("RESEARCHVAULT_PORTAL_ALLOW_ANY_DB", "false").lower() == "true":
-        return True
-
-    try:
-        rp = p.resolve()
-    except Exception:
-        return False
-
-    # OpenClaw workspace access is explicit opt-in only.
-    if (not openclaw_scan_enabled()) and is_within_openclaw_workspace(str(rp)):
-        return False
-
-    # Default allowlist: user's home, plus the canonical vault dirs.
-    home = Path.home().resolve()
-    allowed = [
-        home,
-        Path(os.path.expanduser("~/.researchvault")).resolve(),
-        Path("/tmp").resolve(),
-    ]
-    if openclaw_scan_enabled():
-        allowed.append(openclaw_workspace_root())
-
-    return any(str(rp).startswith(str(root) + os.sep) or rp == root for root in allowed)
+    return path_within_allowed_roots(p)
 
 
 class DbSelectRequest(BaseModel):
@@ -100,6 +78,13 @@ class SerperKeyRequest(BaseModel):
 
 class SearxngBaseUrlRequest(BaseModel):
     base_url: str = Field(min_length=4, max_length=500)
+
+
+def _secret_write_response(fn):
+    try:
+        return fn()
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/dbs")
@@ -128,7 +113,7 @@ def system_secrets_status():
 
 @router.post("/secrets/brave")
 def system_set_brave_key(req: BraveKeyRequest):
-    st = set_brave_api_key(req.api_key)
+    st = _secret_write_response(lambda: set_brave_api_key(req.api_key))
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -142,7 +127,7 @@ def system_set_brave_key(req: BraveKeyRequest):
 
 @router.post("/secrets/brave/clear")
 def system_clear_brave_key():
-    st = clear_brave_api_key()
+    st = _secret_write_response(clear_brave_api_key)
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -156,7 +141,7 @@ def system_clear_brave_key():
 
 @router.post("/secrets/serper")
 def system_set_serper_key(req: SerperKeyRequest):
-    st = set_serper_api_key(req.api_key)
+    st = _secret_write_response(lambda: set_serper_api_key(req.api_key))
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -170,7 +155,7 @@ def system_set_serper_key(req: SerperKeyRequest):
 
 @router.post("/secrets/serper/clear")
 def system_clear_serper_key():
-    st = clear_serper_api_key()
+    st = _secret_write_response(clear_serper_api_key)
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -184,7 +169,7 @@ def system_clear_serper_key():
 
 @router.post("/secrets/searxng")
 def system_set_searxng_base_url(req: SearxngBaseUrlRequest):
-    st = set_searxng_base_url(req.base_url)
+    st = _secret_write_response(lambda: set_searxng_base_url(req.base_url))
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -198,7 +183,7 @@ def system_set_searxng_base_url(req: SearxngBaseUrlRequest):
 
 @router.post("/secrets/searxng/clear")
 def system_clear_searxng_base_url():
-    st = clear_searxng_base_url()
+    st = _secret_write_response(clear_searxng_base_url)
     return {
         "brave_api_key_configured": bool(st.brave_api_key_configured),
         "brave_api_key_source": st.brave_api_key_source,
@@ -219,7 +204,7 @@ def system_select_db(req: DbSelectRequest):
         if not _allowed_db_path(p):
             raise HTTPException(
                 status_code=400,
-                detail="DB path is outside allowed roots. Set RESEARCHVAULT_PORTAL_ALLOW_ANY_DB=true to override.",
+                detail="DB path is outside allowed roots. Update RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS to include the path.",
             )
 
     set_selected_db_path(req.path)
@@ -304,16 +289,15 @@ def system_diagnostics():
                 ),
             }
         )
-
-    if os.getenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS") == "1":
+    elif openclaw_scan_requested():
         hints.append(
             {
-                "type": "portal_secret_persistence_enabled",
-                "severity": "low",
-                "title": "Portal secret persistence enabled",
+                "type": "openclaw_scan_blocked",
+                "severity": "medium",
+                "title": "OpenClaw scan requested but blocked",
                 "detail": (
-                    "Portal UI secrets are persisted to ~/.researchvault/portal/secrets.json "
-                    "because RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1."
+                    "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 is set, but ~/.openclaw/workspace is not inside "
+                    "RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS."
                 ),
             }
         )
@@ -362,12 +346,13 @@ def system_diagnostics():
             "RESEARCHVAULT_WATCHDOG_INGEST_TOP": os.getenv("RESEARCHVAULT_WATCHDOG_INGEST_TOP"),
             "RESEARCHVAULT_VERIFY_INGEST_TOP": os.getenv("RESEARCHVAULT_VERIFY_INGEST_TOP"),
             "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW": os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW"),
-            "RESEARCHVAULT_PORTAL_PERSIST_SECRETS": os.getenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS"),
+            "RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS": os.getenv("RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS"),
             "RESEARCHVAULT_PORTAL_INJECT_SECRETS": os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
             "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
             "SERPER_API_KEY_set": bool(os.getenv("SERPER_API_KEY")),
             "SEARXNG_BASE_URL_set": bool(os.getenv("SEARXNG_BASE_URL")),
+            "effective_allowed_db_roots": allowed_db_roots_as_strings(),
         },
         "providers": {
             "brave": {

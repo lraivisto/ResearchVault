@@ -1,6 +1,8 @@
 import importlib
 import json
 
+import pytest
+
 
 def _reload_portal_secrets():
     import portal.backend.app.portal_secrets as portal_secrets
@@ -8,37 +10,46 @@ def _reload_portal_secrets():
     return importlib.reload(portal_secrets)
 
 
-def test_portal_secrets_not_persisted_by_default(tmp_path, monkeypatch):
+def test_portal_secrets_env_only_no_file_created(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
-    monkeypatch.delenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS", raising=False)
-    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    monkeypatch.setenv("BRAVE_API_KEY", "b" * 20)
+    monkeypatch.setenv("SERPER_API_KEY", "s" * 20)
+    monkeypatch.setenv("SEARXNG_BASE_URL", "https://searx.example")
 
     secrets = _reload_portal_secrets()
-    secrets.clear_brave_api_key()
-    status = secrets.set_brave_api_key("b" * 20)
+    status = secrets.secrets_status()
 
     assert status.brave_api_key_configured is True
-    assert status.brave_api_key_source == "portal"
+    assert status.brave_api_key_source == "env"
+    assert status.serper_api_key_configured is True
+    assert status.serper_api_key_source == "env"
+    assert status.searxng_base_url_configured is True
+    assert status.searxng_base_url_source == "env"
     assert secrets.get_brave_api_key() == "b" * 20
+    assert secrets.get_serper_api_key() == "s" * 20
+    assert secrets.get_searxng_base_url() == "https://searx.example"
     assert not (tmp_path / "secrets.json").exists()
 
 
-def test_portal_secrets_persist_only_when_opted_in(tmp_path, monkeypatch):
-    monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("RESEARCHVAULT_PORTAL_PERSIST_SECRETS", "1")
+def test_portal_secret_write_apis_disabled(monkeypatch):
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    monkeypatch.delenv("SEARXNG_BASE_URL", raising=False)
 
     secrets = _reload_portal_secrets()
-    secrets.clear_serper_api_key()
-    status = secrets.set_serper_api_key("s" * 20)
 
-    assert status.serper_api_key_configured is True
-    assert status.serper_api_key_source == "portal"
-
-    secrets_file = tmp_path / "secrets.json"
-    assert secrets_file.exists()
-    data = json.loads(secrets_file.read_text(encoding="utf-8"))
-    assert data.get("serper_api_key") == "s" * 20
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.set_brave_api_key("b" * 20)
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.clear_brave_api_key()
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.set_serper_api_key("s" * 20)
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.clear_serper_api_key()
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.set_searxng_base_url("https://searx.example")
+    with pytest.raises(RuntimeError, match="Portal secret writes are disabled"):
+        secrets.clear_searxng_base_url()
 
 
 def test_state_json_never_persists_secrets_field(tmp_path, monkeypatch):
@@ -56,11 +67,7 @@ def test_state_json_never_persists_secrets_field(tmp_path, monkeypatch):
 def test_vault_subprocess_secret_injection_requires_opt_in(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
     monkeypatch.delenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS", raising=False)
-    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
-
-    secrets = _reload_portal_secrets()
-    secrets.clear_brave_api_key()
-    secrets.set_brave_api_key("b" * 20)
+    monkeypatch.setenv("BRAVE_API_KEY", "b" * 20)
 
     import portal.backend.app.vault_exec as vault_exec
 
@@ -89,11 +96,7 @@ def test_vault_subprocess_secret_injection_requires_opt_in(tmp_path, monkeypatch
 def test_vault_subprocess_secret_injection_enabled_opt_in(tmp_path, monkeypatch):
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS", "1")
-    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
-
-    secrets = _reload_portal_secrets()
-    secrets.clear_brave_api_key()
-    secrets.set_brave_api_key("b" * 20)
+    monkeypatch.setenv("BRAVE_API_KEY", "b" * 20)
 
     import portal.backend.app.vault_exec as vault_exec
 

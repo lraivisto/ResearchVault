@@ -48,6 +48,21 @@ metadata:
                     "description": "Optional: Set to '1' to allow Portal to inject secrets into vault subprocesses.",
                     "required": false,
                   },
+                "RESEARCHVAULT_PORTAL_TOKEN":
+                  {
+                    "description": "Optional: Fixed static token for Portal authentication. If not set, one is generated in .portal_auth.",
+                    "required": false,
+                  },
+                "SERPER_API_KEY":
+                  {
+                    "description": "Optional: API key for Serper.dev search.",
+                    "required": false,
+                  },
+                "SEARXNG_BASE_URL":
+                  {
+                    "description": "Optional: Base URL for a SearXNG instance.",
+                    "required": false,
+                  },
               },
           },
       },

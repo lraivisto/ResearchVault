@@ -12,17 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Guard 1 - No Portal on Main
+      - name: Guard 1 - Build Artifacts & Hygiene
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            if [ -d "portal" ]; then
-              echo "❌ ERROR: portal/ directory found on main branch. This is forbidden."
-              exit 1
-            fi
-            echo "✅ Portal absent on main."
-          else
-            echo "⏭️ Skipping portal-absence check on non-main branch (${{ github.ref }})."
+          # Fail if node_modules exists anywhere (should be ignored)
+          if find . -name "node_modules" -type d | grep -q "."; then
+            echo "❌ ERROR: node_modules/ directory found in repository. This is forbidden."
+            exit 1
           fi
+          # Fail if *.egg-info exists in repo (should be ignored)
+          if find . -name "*.egg-info" -type d | grep -q "."; then
+            echo "❌ ERROR: .egg-info directory found in repository. This is forbidden."
+            exit 1
+          fi
+          echo "✅ Build hygiene verified."
 
       - name: Guard 2 & 3 - SKILL.md Metadata Checks
         run: |

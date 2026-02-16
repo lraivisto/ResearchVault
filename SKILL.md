@@ -80,19 +80,39 @@ metadata:
 
 # ResearchVault 🦞
 
-**Local-first research orchestration engine.**
+ResearchVault is a local-first research operations toolkit: a CLI for ingestion/search/verification/synthesis plus an optional local portal UI.
+It is designed for explicit operator control: manual start, local state, and predictable defaults.
 
-ResearchVault manages persistent state, synthesis, and autonomous verification for agents.
+## Quick Reference
 
-## Security & Privacy (Local First)
+| Task | Command / Action | Notes |
+|---|---|---|
+| Create project | `python scripts/vault.py init --id "ops-demo" --name "Ops Demo" --objective "Track AI agent changes"` | Creates the project in the local SQLite vault. |
+| Ingest URL | `python scripts/vault.py scuttle "https://example.com" --id "ops-demo"` | SSRF guard is default-deny. Use `--allow-private-networks` only when intentional. |
+| Search | `python scripts/vault.py search --query "agent benchmark updates" --format rich` | Uses configured providers from env; quality depends on provider keys/base URL. |
+| Strategy | `python scripts/vault.py strategy --id "ops-demo"` | Produces next-best-action guidance from current project state. |
+| Verify | `python scripts/vault.py verify plan --id "ops-demo" && python scripts/vault.py verify run --id "ops-demo" --limit 5` | Plans and executes verification missions from low-confidence findings. |
+| Synthesize / Graph | `python scripts/vault.py synthesize --id "ops-demo"` | Builds links between findings/artifacts; inspect graph in the Portal Graph view. |
+| Export | `python scripts/vault.py export --id "ops-demo" --format markdown --output ~/.researchvault/ops-demo.md` | Export path must be under `~/.researchvault` (or test temp paths). |
+| Start portal | `./start_portal.sh` | Backend defaults to `127.0.0.1:8000`; frontend to `127.0.0.1:5173`. |
+| Stop portal | `./start_portal.sh --stop` | Stops backend and frontend processes started by script. |
+| Portal status | `./start_portal.sh --status` | Shows process/health status and UI reachability. |
 
-- **Local Storage**: All data is stored in a local SQLite database (~/.researchvault/research_vault.db). No cloud sync.
-- **Network Transparency**: Outbound connections occur ONLY for user-requested research or Brave Search (if configured). 
-- **SSRF Hardening**: Strict internal network blocking by default. Local/private IPs (localhost, 10.0.0.0/8, etc.) are blocked. Use `--allow-private-networks` to override.
-- **Manual Opt-in Services**: Background watchers and MCP servers are in `scripts/services/` and must be started manually.
-- **Strict Control**: `disable-model-invocation: true` prevents the model from autonomously starting background tasks.
+## Trust Model / Security Notes
 
-## Installation
+- Local-first by default: data is stored in a local SQLite DB (default `~/.researchvault/research_vault.db`).
+- Portal is local by default: backend/frontend bind loopback addresses unless you explicitly override host vars.
+- Portal execution model: the backend runs `scripts.vault` subprocesses; it is a controlled shell over the CLI.
+- Portal auth token is required: `start_portal.sh` loads or generates `.portal_auth`, exports `RESEARCHVAULT_PORTAL_TOKEN`, and keeps `.portal_auth` at `chmod 600`.
+- SSRF posture is default-deny for local/private/link-local targets; private-network access is explicit opt-in via CLI `--allow-private-networks` (Portal toggle maps to this behavior).
+- DB selection is root-scoped by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` (default `~/.researchvault,/tmp`).
+- Portal does not discover or allow selecting DBs under `~/.openclaw/workspace`.
+- Provider secrets are env-only (`BRAVE_API_KEY`, `SERPER_API_KEY`, `SEARXNG_BASE_URL`); Portal does not persist/write secrets and does not inject provider secrets into vault subprocesses.
+- `disable-model-invocation: true` enforces no autonomous background side effects without explicit user action.
+
+## Installation (Manual, Local)
+
+Manual install in a local virtual environment (no embedded installer actions):
 
 ```bash
 python3 -m venv .venv
@@ -100,60 +120,137 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## Quick Start
+## CLI Quick Start
 
-1. **Initialize Project**:
-   ```bash
-   python scripts/vault.py init --objective "Analyze AI trends" --name "Trends-2026"
-   ```
+```bash
+PROJECT_ID="ops-demo"
 
-2. **Ingest Data**:
-   ```bash
-   python scripts/vault.py scuttle "https://example.com" --id "trends-2026"
-   ```
+python scripts/vault.py init \
+  --id "$PROJECT_ID" \
+  --name "Ops Demo" \
+  --objective "Track AI agent changes"
 
-3. **Autonomous Strategist**:
-   ```bash
-   python scripts/vault.py strategy --id "trends-2026"
-   ```
+python scripts/vault.py scuttle "https://example.com" --id "$PROJECT_ID"
+python scripts/vault.py list
+python scripts/vault.py strategy --id "$PROJECT_ID"
+```
 
 ## Portal (Manual Opt-In)
 
-Start the portal explicitly:
+Start manually:
 
 ```bash
 ./start_portal.sh
 ```
 
+Defaults:
+
 - Backend: `127.0.0.1:8000`
 - Frontend: `127.0.0.1:5173`
-- Backend auth strictly uses `RESEARCHVAULT_PORTAL_TOKEN`
-- `./start_portal.sh` loads/generates `.portal_auth` and exports `RESEARCHVAULT_PORTAL_TOKEN` before backend launch
-- Token login: URL hash `#token=<token>` (token from `.portal_auth`)
-- Allowed DB roots are controlled by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` (default `~/.researchvault,/tmp`)
-- OpenClaw workspace DBs are never discovered or selectable in Portal mode
-- Provider secrets are env-only (`BRAVE_API_KEY`, `SERPER_API_KEY`, `SEARXNG_BASE_URL`) and are not injected into vault subprocesses
-- Both hosts are supported for browser access:
-  - `http://127.0.0.1:5173/#token=<token>`
-  - `http://localhost:5173/#token=<token>`
+- Login pages:
+  - `http://127.0.0.1:5173/`
+  - `http://localhost:5173/`
 
-Operational commands:
+Token flow:
+
+- `start_portal.sh` loads existing `.portal_auth` or generates one.
+- It exports `RESEARCHVAULT_PORTAL_TOKEN` before backend launch.
+- UI login accepts manual token entry or token URL hash: `#token=<token>`.
+
+Operational controls:
 
 ```bash
 ./start_portal.sh --status
 ./start_portal.sh --stop
 ```
 
-Security parity with CLI:
-- SSRF blocking is on by default (private/local/link-local targets denied).
-- Portal toggle **Allow private networks** is equivalent to CLI `--allow-private-networks`.
+Operational notes:
+
+- Portal expects local use and local DB roots.
+- DB access is constrained by `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS`.
+- OpenClaw workspace DB paths are intentionally excluded.
+- Portal private-network ingest toggle maps to CLI `--allow-private-networks`.
+
+## Configuration
+
+### Database
+
+- `RESEARCHVAULT_DB`: Override DB file path used by CLI/Portal subprocesses.
+- `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS`: Comma-separated absolute roots allowed for Portal DB selection/discovery. Default: `~/.researchvault,/tmp`.
+- `RESEARCHVAULT_PORTAL_STATE_DIR`: Portal state location (`state.json`). Default: `~/.researchvault/portal`.
+
+### Portal Networking
+
+- `RESEARCHVAULT_PORTAL_HOST`: Backend bind host. Default: `127.0.0.1`.
+- `RESEARCHVAULT_PORTAL_PORT`: Backend bind port. Default: `8000`.
+- `RESEARCHVAULT_PORTAL_FRONTEND_HOST`: Frontend bind host. Default: `127.0.0.1`.
+- `RESEARCHVAULT_PORTAL_FRONTEND_PORT`: Frontend bind port. Default: `5173`.
+- `RESEARCHVAULT_PORTAL_CORS_ORIGINS`: Comma-separated backend CORS origins; `start_portal.sh` sets local frontend origins by default.
+- `RESEARCHVAULT_PORTAL_COOKIE_SECURE`: Set `true` to mark auth cookie `Secure` (HTTPS deployments).
+- `RESEARCHVAULT_PORTAL_RELOAD`: Backend auto-reload toggle (`true` by default in local dev).
+
+### Providers
+
+- `BRAVE_API_KEY`: Brave Search API key.
+- `SERPER_API_KEY`: Serper API key.
+- `SEARXNG_BASE_URL`: SearXNG base URL.
+- `RESEARCHVAULT_SEARCH_PROVIDERS`: Explicit provider order override.
+
+### TLS / CA
+
+- `REQUESTS_CA_BUNDLE`: Custom CA bundle path for HTTPS verification.
+- `SSL_CERT_FILE`: Custom CA certificate file path.
+
+### Advanced / Rare
+
+- `RESEARCHVAULT_PORTAL_PID_DIR`: Portal PID/log directory used by `start_portal.sh`.
+- `RESEARCHVAULT_PORTAL_SHOW_TOKEN`: Set `1` to print tokenized portal URLs in terminal output.
+- `RESEARCHVAULT_WATCHDOG_INGEST_TOP`: Watchdog ingest top-k override.
+- `RESEARCHVAULT_VERIFY_INGEST_TOP`: Verify ingest top-k override.
+- `RESEARCHVAULT_MCP_TRANSPORT`: MCP transport override (default CLI transport is `stdio`).
+
+## Troubleshooting
+
+- **Symptom:** Portal login returns `401 Unauthorized`.
+  **Cause:** Wrong token or backend missing `RESEARCHVAULT_PORTAL_TOKEN`.
+  **Fix:** Restart with `./start_portal.sh`, then use token from `.portal_auth` or `#token=<token>` URL hash.
+
+- **Symptom:** Tokenized URL does not log in.
+  **Cause:** Token mismatch, stale cookie/session, or wrong frontend host/port.
+  **Fix:** Confirm `.portal_auth`, clear browser cookies for the portal origin, and verify `RESEARCHVAULT_PORTAL_FRONTEND_PORT`/URL.
+
+- **Symptom:** DB rejected or cannot be selected in Portal.
+  **Cause:** DB path is outside `RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS` or under denied OpenClaw workspace path.
+  **Fix:** Move/use a DB under allowed roots (default `~/.researchvault,/tmp`) and retry.
+
+- **Symptom:** `Blocked host` when ingesting `localhost`, `127.0.0.1`, `169.254.*`, or private RFC1918 targets.
+  **Cause:** SSRF protection default-deny blocked private/local/link-local addresses.
+  **Fix:** Only if intentional, rerun with `--allow-private-networks`.
+
+- **Symptom:** Portal fails to start because port is already in use.
+  **Cause:** Existing process is bound to backend/frontend ports.
+  **Fix:** Run `./start_portal.sh --stop`, then restart; or change host/port env vars.
+
+- **Symptom:** `vault list` or portal appears empty (`No projects found`).
+  **Cause:** You are using a different DB path than expected.
+  **Fix:** Check `RESEARCHVAULT_DB`, confirm Portal current DB in diagnostics, and align to the intended file.
+
+- **Symptom:** Provider-backed search is not working.
+  **Cause:** Provider env vars are unset or invalid.
+  **Fix:** Set `BRAVE_API_KEY` and/or `SERPER_API_KEY` and/or `SEARXNG_BASE_URL`, then rerun search/verify/watchdog.
+
+- **Symptom:** HTTPS certificate verification failures.
+  **Cause:** Missing private CA/intermediate trust configuration.
+  **Fix:** Set `REQUESTS_CA_BUNDLE` or `SSL_CERT_FILE` to the correct CA file and retry.
 
 ## Optional Services (Manual Start)
 
-- **MCP Server**: `python scripts/services/mcp_server.py`
-- **Watchdog**: `python scripts/services/watchdog.py --once`
+Manual only; nothing auto-starts:
 
-## Provenance & Maintenance
+- MCP Server: `python scripts/services/mcp_server.py`
+- Watchdog: `python scripts/services/watchdog.py --once`
+
+## Provenance
 
 - **Maintainer**: lraivisto
 - **License**: MIT

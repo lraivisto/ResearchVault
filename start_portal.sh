@@ -337,9 +337,19 @@ run_start() {
   AUTH_FILE=".portal_auth"
   if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
     if [ -f "$AUTH_FILE" ]; then
-      echo "Loading token from $AUTH_FILE..."
-      export RESEARCHVAULT_PORTAL_TOKEN
-      RESEARCHVAULT_PORTAL_TOKEN="$(cat "$AUTH_FILE")"
+      echo "Loading token from $AUTH_FILE and exporting RESEARCHVAULT_PORTAL_TOKEN..."
+      local loaded_token
+      loaded_token="$(tr -d '\r\n' < "$AUTH_FILE")"
+      if [ -n "$loaded_token" ]; then
+        export RESEARCHVAULT_PORTAL_TOKEN="$loaded_token"
+      else
+        echo "Token file was empty; generating a new portal token..."
+        local new_token
+        new_token="$(python3 -c "import secrets; print(secrets.token_hex(24))")"
+        echo "$new_token" > "$AUTH_FILE"
+        chmod 600 "$AUTH_FILE"
+        export RESEARCHVAULT_PORTAL_TOKEN="$new_token"
+      fi
     else
       echo "Generating new portal token..."
       local new_token
@@ -350,13 +360,31 @@ run_start() {
     fi
   fi
 
+  if [ -z "${RESEARCHVAULT_PORTAL_TOKEN:-}" ]; then
+    echo "Error: missing RESEARCHVAULT_PORTAL_TOKEN after token initialization." >&2
+    echo "Set RESEARCHVAULT_PORTAL_TOKEN explicitly or remove $AUTH_FILE and retry." >&2
+    exit 1
+  fi
+
+  local token_url_127
+  local token_url_localhost
+  token_url_127="http://127.0.0.1:${FRONTEND_PORT}/#token=${RESEARCHVAULT_PORTAL_TOKEN}"
+  token_url_localhost="http://localhost:${FRONTEND_PORT}/#token=${RESEARCHVAULT_PORTAL_TOKEN}"
+
   echo ""
   echo "=========================================================="
-  echo "  Portal Access Token: $RESEARCHVAULT_PORTAL_TOKEN"
-  echo ""
-  echo "  Login URLs (both supported):"
-  echo "  http://127.0.0.1:${FRONTEND_PORT}/#token=$RESEARCHVAULT_PORTAL_TOKEN"
-  echo "  http://localhost:${FRONTEND_PORT}/#token=$RESEARCHVAULT_PORTAL_TOKEN"
+  echo "  Portal token is exported via RESEARCHVAULT_PORTAL_TOKEN."
+  echo "  Token file: $AUTH_FILE (chmod 600)"
+  echo "  Login pages:"
+  echo "  http://127.0.0.1:${FRONTEND_PORT}/"
+  echo "  http://localhost:${FRONTEND_PORT}/"
+  if [ "${RESEARCHVAULT_PORTAL_SHOW_TOKEN:-0}" = "1" ]; then
+    echo "  Tokenized URLs (explicitly requested):"
+    echo "  $token_url_127"
+    echo "  $token_url_localhost"
+  else
+    echo "  Tokenized URLs are hidden by default (set RESEARCHVAULT_PORTAL_SHOW_TOKEN=1 to print)."
+  fi
   echo "=========================================================="
   echo ""
 
@@ -418,22 +446,19 @@ run_start() {
     echo "Warning: frontend did not become ready within 20s." >&2
   fi
 
-  local direct_127
-  local direct_localhost
-  direct_127="http://127.0.0.1:${FRONTEND_PORT}/#token=${RESEARCHVAULT_PORTAL_TOKEN}"
-  direct_localhost="http://localhost:${FRONTEND_PORT}/#token=${RESEARCHVAULT_PORTAL_TOKEN}"
-
   echo "Portal is running!"
   echo "Backend:      http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
   echo "Frontend 127: http://127.0.0.1:${FRONTEND_PORT}"
   echo "Frontend loc: http://localhost:${FRONTEND_PORT}"
-  echo "Direct 127:   $direct_127"
-  echo "Direct loc:   $direct_localhost"
+  if [ "${RESEARCHVAULT_PORTAL_SHOW_TOKEN:-0}" = "1" ]; then
+    echo "Direct 127:   $token_url_127"
+    echo "Direct loc:   $token_url_localhost"
+  fi
 
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    open "$direct_127" >/dev/null 2>&1 || true
+    open "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1 || true
   elif command -v xdg-open >/dev/null 2>&1 && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
-    xdg-open "$direct_127" >/dev/null 2>&1 || true
+    xdg-open "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1 || true
   fi
 
   trap 'start_cleanup; exit 0' INT TERM

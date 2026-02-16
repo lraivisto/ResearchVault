@@ -48,3 +48,14 @@ def test_login_cookie_is_host_only_and_lax(monkeypatch):
     set_cookie = response.headers.get("set-cookie", "").lower()
     assert "domain=" not in set_cookie
     assert "samesite=lax" in set_cookie
+
+
+def test_missing_portal_token_is_rejected(monkeypatch):
+    import portal.backend.app.auth as auth
+
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_TOKEN", raising=False)
+
+    with pytest.raises(HTTPException) as e:
+        auth.create_session("anything")
+
+    assert "not configured" in str(e.value.detail).lower()

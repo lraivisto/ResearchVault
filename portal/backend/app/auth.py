@@ -26,7 +26,7 @@ def _expected_token() -> str:
     if not expected:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Portal token not configured (set RESEARCHVAULT_PORTAL_TOKEN).",
+            detail="Portal token not configured (set RESEARCHVAULT_PORTAL_TOKEN; start_portal.sh exports it from .portal_auth).",
         )
     return expected
 

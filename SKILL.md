@@ -120,7 +120,9 @@ Start the portal explicitly:
 
 - Backend: `127.0.0.1:8000`
 - Frontend: `127.0.0.1:5173`
-- Token login: `.portal_auth` and URL hash `#token=<token>`
+- Backend auth strictly uses `RESEARCHVAULT_PORTAL_TOKEN`
+- `./start_portal.sh` loads/generates `.portal_auth` and exports `RESEARCHVAULT_PORTAL_TOKEN` before backend launch
+- Token login: URL hash `#token=<token>` (token from `.portal_auth`)
 - Both hosts are supported for browser access:
   - `http://127.0.0.1:5173/#token=<token>`
   - `http://localhost:5173/#token=<token>`

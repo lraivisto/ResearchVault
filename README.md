@@ -35,10 +35,12 @@ Run the portal manually (nothing auto-starts in the background):
 
 - Backend binds to `127.0.0.1:8000`
 - Frontend binds to `127.0.0.1:5173`
-- Login token is read from `.portal_auth` (or generated on first run)
-- Use either host for login links:
+- Backend auth strictly uses `RESEARCHVAULT_PORTAL_TOKEN`.
+- `./start_portal.sh` loads token from `.portal_auth` (or generates it) and exports `RESEARCHVAULT_PORTAL_TOKEN` before launching the backend.
+- Use either host for login:
   - `http://127.0.0.1:5173/#token=<token>`
   - `http://localhost:5173/#token=<token>`
+- Tokenized URLs are hidden in terminal output by default; read `.portal_auth` (chmod 600) to paste the token manually, or set `RESEARCHVAULT_PORTAL_SHOW_TOKEN=1` to print tokenized URLs.
 - OpenClaw workspace DB discovery is disabled by default; set `RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1` to opt in.
 - Portal-entered search provider secrets are not persisted by default; set `RESEARCHVAULT_PORTAL_PERSIST_SECRETS=1` to persist in `~/.researchvault/portal/secrets.json`.
 - Portal-entered secrets are not injected into vault subprocesses by default; set `RESEARCHVAULT_PORTAL_INJECT_SECRETS=1` to inject.

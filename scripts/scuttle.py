@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
+import os
 import inspect
 import ipaddress
 import socket
 import urllib.parse
 import requests
+import certifi
 from bs4 import BeautifulSoup
 import re
 import json
@@ -63,6 +65,10 @@ class SafeSession(requests.Session):
         kwargs["allow_redirects"] = False
         kwargs["timeout"] = self.scuttle_config.timeout_s
         
+        # Explicitly set CA bundle to ensure TLS verification works in CI environments
+        if "verify" not in kwargs:
+            kwargs["verify"] = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE") or certifi.where()
+
         current_url = url
         redirect_count = 0
         

@@ -55,6 +55,9 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install CA Certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
       - name: Install Dependencies
         run: |
           pip install -e .

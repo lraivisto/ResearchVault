@@ -4,69 +4,71 @@ description: "Local-first research orchestration engine. Manages state, synthesi
 homepage: https://github.com/lraivisto/ResearchVault
 disable-model-invocation: true
 user-invocable: true
+install:
+  - id: vault-venv
+    kind: exec
+    command: python3 -m venv .venv && . .venv/bin/activate && pip install -e .
+    label: Initialize ResearchVault (Standard)
+env:
+  RESEARCHVAULT_DB:
+    description: "Optional: Custom path to the SQLite database file."
+    required: false
+  RESEARCHVAULT_PORTAL_TOKEN:
+    description: "Optional: Static token for Portal authentication. If unset, start_portal.sh generates .portal_auth and exports this variable for the backend."
+    required: false
+  BRAVE_API_KEY:
+    description: "Optional: API key for Brave Search."
+    required: false
+  SERPER_API_KEY:
+    description: "Optional: API key for Serper.dev search."
+    required: false
+  SEARXNG_BASE_URL:
+    description: "Optional: Base URL for a SearXNG instance."
+    required: false
+  RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:
+    description: "Optional: Set to '1' to allow Portal DB discovery and DB selection under ~/.openclaw/workspace."
+    required: false
+  RESEARCHVAULT_PORTAL_PERSIST_SECRETS:
+    description: "Optional: Set to '1' to persist Portal-entered provider secrets to ~/.researchvault/portal/secrets.json."
+    required: false
+  RESEARCHVAULT_PORTAL_INJECT_SECRETS:
+    description: "Optional: Set to '1' to inject Portal-managed provider secrets into vault subprocess environments."
+    required: false
+  RESEARCHVAULT_PORTAL_STATE_DIR:
+    description: "Optional: Directory for portal local state and secrets files (default ~/.researchvault/portal)."
+    required: false
+  RESEARCHVAULT_PORTAL_ALLOW_ANY_DB:
+    description: "Optional: Set to 'true' to bypass DB path allowlist checks."
+    required: false
+  RESEARCHVAULT_PORTAL_HOST:
+    description: "Optional: Portal backend bind host (default 127.0.0.1)."
+    required: false
+  RESEARCHVAULT_PORTAL_PORT:
+    description: "Optional: Portal backend port (default 8000)."
+    required: false
+  RESEARCHVAULT_PORTAL_FRONTEND_HOST:
+    description: "Optional: Portal frontend bind host (default 127.0.0.1)."
+    required: false
+  RESEARCHVAULT_PORTAL_FRONTEND_PORT:
+    description: "Optional: Portal frontend port (default 5173)."
+    required: false
+  RESEARCHVAULT_PORTAL_CORS_ORIGINS:
+    description: "Optional: Comma-separated allowed CORS origins for the backend."
+    required: false
+  RESEARCHVAULT_PORTAL_RELOAD:
+    description: "Optional: Set to 'true' to enable backend auto-reload (default true)."
+    required: false
+  RESEARCHVAULT_PORTAL_COOKIE_SECURE:
+    description: "Optional: Set to 'true' to mark auth cookies as Secure."
+    required: false
+  RESEARCHVAULT_PORTAL_PID_DIR:
+    description: "Optional: Directory used by start_portal.sh for PID/log files."
+    required: false
 metadata:
-  {
-    "openclaw":
-      {
-        "emoji": "🦞",
-        "requires": { "python": ">=3.13" },
-        "install":
-          [
-            {
-              "id": "vault-venv",
-              "kind": "exec",
-              "command": "python3 -m venv .venv && . .venv/bin/activate && pip install -e .",
-              "label": "Initialize ResearchVault (Standard)",
-            },
-          ],
-        "config":
-          {
-            "env":
-              {
-                "RESEARCHVAULT_DB":
-                  {
-                    "description": "Optional: Custom path to the SQLite database file.",
-                    "required": false,
-                  },
-                "BRAVE_API_KEY":
-                  {
-                    "description": "Optional: API key for live web search and verification. Set in skills.entries.researchvault.env.BRAVE_API_KEY.",
-                    "required": false,
-                  },
-                "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW":
-                  {
-                    "description": "Optional: Set to '1' to allow Portal to scan ~/.openclaw/workspace/memory for vault databases.",
-                    "required": false,
-                  },
-                "RESEARCHVAULT_PORTAL_PERSIST_SECRETS":
-                  {
-                    "description": "Optional: Set to '1' to allow Portal to persist entered API keys to local state.json.",
-                    "required": false,
-                  },
-                "RESEARCHVAULT_PORTAL_INJECT_SECRETS":
-                  {
-                    "description": "Optional: Set to '1' to allow Portal to inject secrets into vault subprocesses.",
-                    "required": false,
-                  },
-                "RESEARCHVAULT_PORTAL_TOKEN":
-                  {
-                    "description": "Optional: Fixed static token for Portal authentication. If not set, one is generated in .portal_auth.",
-                    "required": false,
-                  },
-                "SERPER_API_KEY":
-                  {
-                    "description": "Optional: API key for Serper.dev search.",
-                    "required": false,
-                  },
-                "SEARXNG_BASE_URL":
-                  {
-                    "description": "Optional: Base URL for a SearXNG instance.",
-                    "required": false,
-                  },
-              },
-          },
-      },
-  }
+  openclaw:
+    emoji: "🦞"
+    requires:
+      python: ">=3.13"
 ---
 
 # ResearchVault 🦞

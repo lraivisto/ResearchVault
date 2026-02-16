@@ -4,6 +4,10 @@ import { AlertTriangle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import type { DiagnosticsResponse, DiagnosticsHint, SecretsStatusResponse } from '@/lib/api';
 import { systemGet, systemPost } from '@/lib/api';
 
+function isOpenClawPath(path: string): boolean {
+  return (path || '').includes('/.openclaw/workspace/');
+}
+
 function HintCard({
   hint,
   onApplyDb,
@@ -269,6 +273,12 @@ export default function DiagnosticsPanel({
                   {diag.env.RESEARCHVAULT_VERIFY_INGEST_TOP || '1 (portal default)'}
                 </div>
               </div>
+              <div>
+                <div className="text-[11px] text-gray-500 font-mono">OpenClaw workspace scan</div>
+                <div className="text-xs text-gray-200 font-mono">
+                  {diag.env.RESEARCHVAULT_PORTAL_SCAN_OPENCLAW === '1' ? 'enabled (explicit opt-in)' : 'disabled (default)'}
+                </div>
+              </div>
             </div>
             <div className="mt-2 text-[11px] text-gray-500 font-mono">
               These knobs control how many top search results get auto-ingested into Findings (so the dashboard shows real content, not just a link list).
@@ -477,7 +487,12 @@ export default function DiagnosticsPanel({
             {diag.db.candidates.map((c) => (
               <div key={c.path} className="flex items-center justify-between gap-3 border border-white/10 rounded px-3 py-2">
                 <div className="min-w-0">
-                  <div className="text-xs font-mono text-gray-200 break-all">{c.path}</div>
+                  <div className="text-xs font-mono text-gray-200 break-all">
+                    {c.path}
+                    {isOpenClawPath(c.path) ? (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-amber">OpenClaw scan enabled</span>
+                    ) : null}
+                  </div>
                   <div className="text-[11px] font-mono text-gray-500">
                     {c.exists ? 'exists' : 'missing'} | projects:{c.counts?.projects ?? 'n/a'} findings:{c.counts?.findings ?? 'n/a'}{' '}
                     {c.error ? `| error:${c.error}` : ''}

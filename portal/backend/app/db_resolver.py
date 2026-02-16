@@ -12,6 +12,9 @@ import scripts.db as vault_db
 
 from portal.backend.app.portal_state import get_selected_db_path
 
+OPENCLAW_WORKSPACE_ROOT = Path(os.path.expanduser("~/.openclaw/workspace")).resolve()
+OPENCLAW_MEMORY_ROOT = OPENCLAW_WORKSPACE_ROOT / "memory"
+
 
 def _expand_abs(p: str) -> str:
     return str(Path(os.path.expanduser(p)).resolve())
@@ -151,6 +154,23 @@ def _dedup_paths(paths: Iterable[str]) -> List[str]:
     return out
 
 
+def openclaw_scan_enabled() -> bool:
+    return os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW") == "1"
+
+
+def openclaw_workspace_root() -> Path:
+    return OPENCLAW_WORKSPACE_ROOT
+
+
+def is_within_openclaw_workspace(path: str) -> bool:
+    try:
+        rp = Path(os.path.expanduser(path)).resolve()
+    except Exception:
+        return False
+    root = openclaw_workspace_root()
+    return rp == root or str(rp).startswith(str(root) + os.sep)
+
+
 def discover_candidate_paths() -> List[str]:
     paths: List[str] = []
 
@@ -164,15 +184,15 @@ def discover_candidate_paths() -> List[str]:
 
     # Known defaults (kept in scripts.db for consistency).
     paths.append(vault_db.DEFAULT_DB_PATH)
-    paths.append(vault_db.LEGACY_DB_PATH)
 
     # "Nearby" vaults (lightweight globbing; do not recurse).
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.db")])
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.sqlite*")])
 
-    if os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW") == "1":
-        paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.db")])
-        paths.extend([str(p) for p in Path(os.path.expanduser("~/.openclaw/workspace/memory")).glob("*.sqlite*")])
+    if openclaw_scan_enabled():
+        paths.append(vault_db.LEGACY_DB_PATH)
+        paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.db")])
+        paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.sqlite*")])
 
     return _dedup_paths(paths)
 
@@ -222,11 +242,31 @@ def resolve_effective_db() -> ResolvedDb:
             note += " (DB file does not exist yet; it will be created on first write.)"
         return ResolvedDb(path=p, source="env", note=note)
 
-    legacy = inspect_db(vault_db.LEGACY_DB_PATH)
     default = inspect_db(vault_db.DEFAULT_DB_PATH)
 
+    if not openclaw_scan_enabled():
+        if default.exists:
+            return ResolvedDb(path=default.path, source="auto", note="Only default DB exists.")
+        if Path(_expand_abs(vault_db.LEGACY_DB_PATH)).exists():
+            return ResolvedDb(
+                path=_expand_abs(vault_db.DEFAULT_DB_PATH),
+                source="auto",
+                note=(
+                    "Defaulting to ~/.researchvault/research_vault.db. "
+                    "OpenClaw workspace DB discovery is disabled by default "
+                    "(set RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 to opt in)."
+                ),
+            )
+        return ResolvedDb(
+            path=_expand_abs(vault_db.DEFAULT_DB_PATH),
+            source="auto",
+            note="No existing DB found; default path will be created on first write.",
+        )
+
+    legacy = inspect_db(vault_db.LEGACY_DB_PATH)
+
     if legacy.exists and not default.exists:
-        return ResolvedDb(path=legacy.path, source="auto", note="Only legacy DB exists.")
+        return ResolvedDb(path=legacy.path, source="auto", note="Only legacy DB exists (OpenClaw scan enabled).")
     if default.exists and not legacy.exists:
         return ResolvedDb(path=default.path, source="auto", note="Only default DB exists.")
 

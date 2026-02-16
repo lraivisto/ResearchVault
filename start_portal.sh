@@ -297,25 +297,40 @@ run_start() {
 
   # DB resolution:
   # - If RESEARCHVAULT_DB is already set, respect it.
-  # - If exactly one known DB exists, pin to it for consistency.
-  # - If multiple exist, let the Portal auto-detect and expose a UI selector.
+  # - OpenClaw workspace DB scope is explicit opt-in (RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1).
+  # - By default, pin to ~/.researchvault/research_vault.db.
   if [ -z "${RESEARCHVAULT_DB:-}" ]; then
     LEGACY_DB="$HOME/.openclaw/workspace/memory/research_vault.db"
     DEFAULT_DB="$HOME/.researchvault/research_vault.db"
     LEGACY_EXISTS="false"
     DEFAULT_EXISTS="false"
+    OPENCLAW_SCAN="${RESEARCHVAULT_PORTAL_SCAN_OPENCLAW:-0}"
 
     if [ -f "$LEGACY_DB" ]; then LEGACY_EXISTS="true"; fi
     if [ -f "$DEFAULT_DB" ]; then DEFAULT_EXISTS="true"; fi
 
-    if [ "$LEGACY_EXISTS" = "true" ] && [ "$DEFAULT_EXISTS" = "false" ]; then
-      echo "Using legacy workspace database: $LEGACY_DB"
-      export RESEARCHVAULT_DB="$LEGACY_DB"
-    elif [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "false" ]; then
+    if [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "false" ]; then
       echo "Using default database: $DEFAULT_DB"
       export RESEARCHVAULT_DB="$DEFAULT_DB"
+    elif [ "$DEFAULT_EXISTS" = "false" ] && [ "$LEGACY_EXISTS" = "true" ]; then
+      if [ "$OPENCLAW_SCAN" = "1" ]; then
+        echo "Using OpenClaw legacy database (scan enabled): $LEGACY_DB"
+        export RESEARCHVAULT_DB="$LEGACY_DB"
+      else
+        echo "Legacy OpenClaw DB detected, but OpenClaw scan is disabled by default."
+        echo "Using default path instead: $DEFAULT_DB"
+        echo "Set RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 to opt in to OpenClaw workspace DB access."
+        export RESEARCHVAULT_DB="$DEFAULT_DB"
+      fi
     elif [ "$DEFAULT_EXISTS" = "true" ] && [ "$LEGACY_EXISTS" = "true" ]; then
-      echo "Multiple vault DBs detected (legacy + default). The Portal will prompt you to choose."
+      if [ "$OPENCLAW_SCAN" = "1" ]; then
+        echo "Multiple vault DBs detected (default + OpenClaw scan enabled)."
+      else
+        echo "Multiple DBs detected; OpenClaw scan is disabled. Using default DB: $DEFAULT_DB"
+        export RESEARCHVAULT_DB="$DEFAULT_DB"
+      fi
+    else
+      export RESEARCHVAULT_DB="$DEFAULT_DB"
     fi
   fi
 

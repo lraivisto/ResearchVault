@@ -68,3 +68,115 @@ def test_resolver_env_override_wins(tmp_path, monkeypatch):
     assert resolved.source == "env"
     assert Path(resolved.path) == (tmp_path / "env.db").resolve()
 
+
+def test_discover_candidates_default_excludes_legacy_openclaw(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", raising=False)
+    monkeypatch.delenv("RESEARCHVAULT_DB", raising=False)
+
+    legacy = tmp_path / ".openclaw" / "workspace" / "memory" / "research_vault.db"
+    default = tmp_path / ".researchvault" / "research_vault.db"
+    _make_min_db(legacy, projects=3, findings=8)
+    _make_min_db(default, projects=1, findings=1)
+
+    import scripts.db as vault_db
+
+    monkeypatch.setattr(vault_db, "LEGACY_DB_PATH", str(legacy))
+    monkeypatch.setattr(vault_db, "DEFAULT_DB_PATH", str(default))
+
+    from portal.backend.app.db_resolver import discover_candidate_paths
+    from portal.backend.app.portal_state import set_selected_db_path
+
+    set_selected_db_path(None)
+    candidates = discover_candidate_paths()
+    assert str(legacy.resolve()) not in candidates
+
+
+def test_discover_candidates_opt_in_includes_legacy_openclaw(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", "1")
+    monkeypatch.delenv("RESEARCHVAULT_DB", raising=False)
+
+    legacy = tmp_path / ".openclaw" / "workspace" / "memory" / "research_vault.db"
+    default = tmp_path / ".researchvault" / "research_vault.db"
+    _make_min_db(legacy, projects=3, findings=8)
+    _make_min_db(default, projects=1, findings=1)
+
+    import scripts.db as vault_db
+
+    monkeypatch.setattr(vault_db, "LEGACY_DB_PATH", str(legacy))
+    monkeypatch.setattr(vault_db, "DEFAULT_DB_PATH", str(default))
+
+    from portal.backend.app.db_resolver import discover_candidate_paths
+    from portal.backend.app.portal_state import set_selected_db_path
+
+    set_selected_db_path(None)
+    candidates = discover_candidate_paths()
+    assert str(legacy.resolve()) in candidates
+
+
+def test_resolver_scan_disabled_ignores_legacy_even_if_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("RESEARCHVAULT_DB", raising=False)
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", raising=False)
+
+    legacy = tmp_path / ".openclaw" / "workspace" / "memory" / "research_vault.db"
+    default = tmp_path / ".researchvault" / "research_vault.db"
+    _make_min_db(legacy, projects=2, findings=4)
+
+    import scripts.db as vault_db
+
+    monkeypatch.setattr(vault_db, "LEGACY_DB_PATH", str(legacy))
+    monkeypatch.setattr(vault_db, "DEFAULT_DB_PATH", str(default))
+
+    from portal.backend.app.db_resolver import resolve_effective_db
+    from portal.backend.app.portal_state import set_selected_db_path
+
+    set_selected_db_path(None)
+    resolved = resolve_effective_db()
+    assert Path(resolved.path) == default.resolve()
+    assert "disabled by default" in resolved.note
+
+
+def test_resolver_scan_enabled_can_use_legacy(tmp_path, monkeypatch):
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("RESEARCHVAULT_DB", raising=False)
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", "1")
+
+    legacy = tmp_path / ".openclaw" / "workspace" / "memory" / "research_vault.db"
+    default = tmp_path / ".researchvault" / "research_vault.db"
+    _make_min_db(legacy, projects=2, findings=4)
+
+    import scripts.db as vault_db
+
+    monkeypatch.setattr(vault_db, "LEGACY_DB_PATH", str(legacy))
+    monkeypatch.setattr(vault_db, "DEFAULT_DB_PATH", str(default))
+
+    from portal.backend.app.db_resolver import resolve_effective_db
+    from portal.backend.app.portal_state import set_selected_db_path
+
+    set_selected_db_path(None)
+    resolved = resolve_effective_db()
+    assert Path(resolved.path) == legacy.resolve()
+
+
+def test_system_rejects_openclaw_path_when_scan_disabled(monkeypatch):
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", raising=False)
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_ALLOW_ANY_DB", raising=False)
+
+    from portal.backend.app.db_resolver import openclaw_workspace_root
+    from portal.backend.app.routers.system import _allowed_db_path
+
+    candidate = openclaw_workspace_root() / "memory" / "blocked.db"
+    assert _allowed_db_path(candidate) is False
+
+
+def test_system_allows_openclaw_path_when_scan_enabled(monkeypatch):
+    monkeypatch.setenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW", "1")
+    monkeypatch.delenv("RESEARCHVAULT_PORTAL_ALLOW_ANY_DB", raising=False)
+
+    from portal.backend.app.db_resolver import openclaw_workspace_root
+    from portal.backend.app.routers.system import _allowed_db_path
+
+    candidate = openclaw_workspace_root() / "memory" / "allowed.db"
+    assert _allowed_db_path(candidate) is True

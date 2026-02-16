@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import json
+import re
 from rich.console import Console
 from rich.table import Table
 from rich import box
@@ -18,6 +19,11 @@ import scripts.strategy as strategy_engine
 
 console = Console()
 
+
+def _safe_project_id(raw: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", (raw or "").strip().lower()).strip("-")
+    return slug[:120] or "project"
+
 def main():
     db.init_db()
     parser = argparse.ArgumentParser(description="Vault Orchestrator")
@@ -25,7 +31,7 @@ def main():
 
     # Init
     init_parser = subparsers.add_parser("init")
-    init_parser.add_argument("--id", required=True)
+    init_parser.add_argument("--id", required=False)
     init_parser.add_argument("--name")
     init_parser.add_argument("--objective", required=True)
     init_parser.add_argument("--priority", type=int, default=0)
@@ -39,6 +45,7 @@ def main():
 
     # List
     list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Status Update
     update_parser = subparsers.add_parser("update")
@@ -58,6 +65,7 @@ def main():
     search_parser = subparsers.add_parser("search")
     search_parser.add_argument("--query", required=True)
     search_parser.add_argument("--set-result")
+    search_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Log
     log_parser = subparsers.add_parser("log")
@@ -75,6 +83,8 @@ def main():
     status_parser.add_argument("--id", required=True)
     status_parser.add_argument("--filter-tag", help="Filter events by tag")
     status_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    status_parser.add_argument("--format", choices=["rich", "json"], default="rich")
+    status_parser.add_argument("--insights-limit", type=int, default=50, help="Max insights to include in status output")
 
     # Insight
     insight_parser = subparsers.add_parser("insight")
@@ -87,6 +97,8 @@ def main():
     insight_parser.add_argument("--conf", type=float, default=1.0, help="Confidence score (0.0-1.0)")
     insight_parser.add_argument("--filter-tag", help="Filter insights by tag")
     insight_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    insight_parser.add_argument("--format", choices=["rich", "json"], default="rich")
+    insight_parser.add_argument("--limit", type=int, default=200, help="Max findings to return when listing insights")
 
     # Interactive Insight Mode
     insight_parser.add_argument("--interactive", "-i", action="store_true", help="Interactive session to add multiple insights")
@@ -95,6 +107,8 @@ def main():
     summary_parser = subparsers.add_parser("summary")
     summary_parser.add_argument("--id", required=True)
     summary_parser.add_argument("--branch", default=None, help="Branch name (default: main)")
+    summary_parser.add_argument("--format", choices=['rich', 'json'], default='rich')
+    summary_parser.add_argument("--ai", action="store_true", help="Generate an AI-synthesized mission verdict")
 
     # Branches
     branch_parser = subparsers.add_parser("branch", help="Manage divergent reasoning branches")
@@ -108,6 +122,7 @@ def main():
 
     branch_list = branch_sub.add_parser("list", help="List branches")
     branch_list.add_argument("--id", required=True)
+    branch_list.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Hypotheses
     hyp_parser = subparsers.add_parser("hypothesis", help="Manage hypotheses within branches")
@@ -124,6 +139,7 @@ def main():
     hyp_list = hyp_sub.add_parser("list", help="List hypotheses")
     hyp_list.add_argument("--id", required=True)
     hyp_list.add_argument("--branch", default=None, help="Branch name (omit for all)")
+    hyp_list.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Artifacts
     artifact_parser = subparsers.add_parser("artifact", help="Register local artifacts for synthesis/linking")
@@ -139,6 +155,7 @@ def main():
     artifact_list = artifact_sub.add_parser("list", help="List artifacts")
     artifact_list.add_argument("--id", required=True)
     artifact_list.add_argument("--branch", default=None, help="Branch name (default: main)")
+    artifact_list.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Synthesis
     synth_parser = subparsers.add_parser("synthesize", help="Discover links via local embeddings")
@@ -148,6 +165,7 @@ def main():
     synth_parser.add_argument("--top-k", type=int, default=5, help="Max links per entity")
     synth_parser.add_argument("--max-links", type=int, default=50)
     synth_parser.add_argument("--dry-run", action="store_true", help="Compute links but do not persist")
+    synth_parser.add_argument("--format", choices=["rich", "json"], default="rich")
 
     # Verification protocol
     verify_parser = subparsers.add_parser("verify", help="Active verification protocol (missions)")
@@ -158,18 +176,21 @@ def main():
     verify_plan.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_plan.add_argument("--threshold", type=float, default=0.7)
     verify_plan.add_argument("--max", dest="max_missions", type=int, default=20)
+    verify_plan.add_argument("--format", choices=["rich", "json"], default="rich")
 
     verify_list = verify_sub.add_parser("list", help="List verification missions")
     verify_list.add_argument("--id", required=True)
     verify_list.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_list.add_argument("--status", default=None, choices=["open", "in_progress", "done", "blocked", "cancelled"])
     verify_list.add_argument("--limit", type=int, default=50)
+    verify_list.add_argument("--format", choices=["rich", "json"], default="rich")
 
     verify_run = verify_sub.add_parser("run", help="Execute missions via cache/Brave (if configured)")
     verify_run.add_argument("--id", required=True)
     verify_run.add_argument("--branch", default=None, help="Branch name (default: main)")
     verify_run.add_argument("--status", default="open", choices=["open", "blocked"])
     verify_run.add_argument("--limit", type=int, default=5)
+    verify_run.add_argument("--format", choices=["rich", "json"], default="rich")
 
     verify_complete = verify_sub.add_parser("complete", help="Manually update a mission status")
     verify_complete.add_argument("--mission", required=True)
@@ -232,7 +253,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "init":
-        core.start_project(args.id, args.name or args.id, args.objective, args.priority)
+        project_id = args.id or _safe_project_id(args.name or args.objective)
+        project_name = args.name or project_id
+        core.start_project(project_id, project_name, args.objective, args.priority)
     elif args.command == "export":
         data = core.get_status(args.id, branch=args.branch)
         if not data:
@@ -308,27 +331,42 @@ def main():
                 print(output)
     elif args.command == "list":
         projects = core.list_projects()
-        if not projects:
-            console.print("[yellow]No projects found.[/yellow]")
+        if args.format == "json":
+            # Stable, machine-readable output for the Portal UI.
+            rows = [
+                {
+                    "id": p[0],
+                    "name": p[1],
+                    "objective": p[2],
+                    "status": p[3],
+                    "created_at": p[4],
+                    "priority": p[5],
+                }
+                for p in projects
+            ]
+            print(json.dumps(rows, indent=2))
         else:
-            table = Table(title="Research Vault Projects", box=box.ROUNDED)
-            table.add_column("ID", style="cyan", no_wrap=True)
-            table.add_column("Prior", style="magenta", justify="center")
-            table.add_column("Status", style="bold")
-            table.add_column("Name", style="green")
-            table.add_column("Objective")
-            
-            for p in projects:
-                # p: id, name, objective, status, created_at, priority
-                status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
-                table.add_row(
-                    p[0], 
-                    str(p[5]), 
-                    f"[{status_style}]{p[3].upper()}[/{status_style}]", 
-                    p[1], 
-                    p[2]
-                )
-            console.print(table)
+            if not projects:
+                console.print("[yellow]No projects found.[/yellow]")
+            else:
+                table = Table(title="Research Vault Projects", box=box.ROUNDED)
+                table.add_column("ID", style="cyan", no_wrap=True)
+                table.add_column("Prior", style="magenta", justify="center")
+                table.add_column("Status", style="bold")
+                table.add_column("Name", style="green")
+                table.add_column("Objective")
+                
+                for p in projects:
+                    # p: id, name, objective, status, created_at, priority
+                    status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
+                    table.add_row(
+                        p[0], 
+                        str(p[5]), 
+                        f"[{status_style}]{p[3].upper()}[/{status_style}]", 
+                        p[1], 
+                        p[2]
+                    )
+                console.print(table)
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
     elif args.command == "summary":
@@ -336,18 +374,63 @@ def main():
         if not status:
             console.print(f"[red]Project '{args.id}' not found.[/red]")
         else:
-            p = status['project']
+            p = status["project"]
             insights = core.get_insights(args.id, branch=args.branch)
-            events = status['recent_events']
-            
-            console.print(Panel(
-                f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
-                f"[bold cyan]Objective:[/] {p[2]}\n"
-                f"[bold cyan]Insights:[/] {len(insights)}\n"
-                f"[bold cyan]Events logged:[/] {len(events)}",
-                title="Vault Quick Summary",
-                border_style="magenta"
-            ))
+            events = status["recent_events"]
+
+            ai_verdict = None
+            if args.ai:
+                # Loopback to OpenClaw for synthesis
+                import subprocess
+
+                # Pick top 5 findings for context
+                findings_snippet = "\n".join([f"- {i[0]}: {i[1][:200]}..." for i in insights[:5]])
+                prompt = (
+                    f"MISSION: Summarize findings for research project '{p[1]}'. "
+                    f"Objective: {p[2]}. "
+                    f"Context: {len(insights)} findings total. "
+                    f"Recent Data:\n{findings_snippet}\n\n"
+                    "Provide a one-sentence 'Mission Verdict' on the current progress. "
+                    "Be technical and concise. Return only the sentence."
+                )
+                try:
+                    # Run via 'openclaw agent' in local (embedded) mode to bypass gateway queue.
+                    smoke_id = f"vault-summary-{p[0]}"
+                    cmd = ["openclaw", "agent", "--local", "--session-id", smoke_id, "--message", prompt, "--json"]
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+                    if res.returncode == 0:
+                        data = json.loads(res.stdout)
+                        # Depending on model output, we might need to extract from payloads
+                        if data.get("payloads") and len(data["payloads"]) > 0:
+                            ai_verdict = data["payloads"][0].get("text", "").strip()
+                except Exception:
+                    ai_verdict = "Synthesis unavailable."
+
+            if args.format == "json":
+                summary_data = {
+                    "project": {
+                        "id": p[0],
+                        "name": p[1],
+                        "objective": p[2],
+                        "status": p[3],
+                        "created_at": p[4],
+                        "priority": p[5],
+                    },
+                    "counts": {"insights": len(insights), "events": len(events)},
+                    "ai_verdict": ai_verdict,
+                }
+                print(json.dumps(summary_data, indent=2, default=str))
+            else:
+                body = (
+                    f"[bold cyan]Project:[/] {p[1]} ({p[0]})\n"
+                    f"[bold cyan]Objective:[/] {p[2]}\n"
+                    f"[bold cyan]Insights:[/] {len(insights)}\n"
+                    f"[bold cyan]Events logged:[/] {len(events)}"
+                )
+                if ai_verdict:
+                    body += f"\n[bold cyan]AI Verdict:[/] {ai_verdict}"
+
+                console.print(Panel(body, title="Vault Quick Summary", border_style="magenta"))
     elif args.command == "scuttle":
         try:
             service = core.get_ingest_service()
@@ -374,41 +457,67 @@ def main():
                     console.print(f"[green]✔ Ingested:[/green] {result.metadata['title']} {source_info}")
             else:
                 console.print(f"[red]Ingest failed:[/red] {result.error}")
+                raise SystemExit(1)
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
+            raise SystemExit(1)
     elif args.command == "search":
         if args.set_result:
             # Agent Mode: Manual Injection
             try:
                 result_data = json.loads(args.set_result)
                 core.log_search(args.query, result_data)
-                console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
+                if args.format == "json":
+                    print(json.dumps({"ok": True, "query": args.query, "cached": True}))
+                else:
+                    console.print(f"[green]✔ Cached provided result for:[/green] {args.query}")
             except json.JSONDecodeError:
-                console.print("[red]Error: --set-result must be valid JSON.[/red]")
+                msg = "Error: --set-result must be valid JSON."
+                if args.format == "json":
+                    print(json.dumps({"ok": False, "error": msg}))
+                else:
+                    console.print(f"[red]{msg}[/red]")
+                raise SystemExit(1)
         else:
             # Standalone Mode: Check Cache -> API
             cached = core.check_search(args.query)
             if cached:
-                console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
-                console.print_json(data=cached)
+                if args.format == "json":
+                    print(json.dumps(cached, indent=2))
+                else:
+                    console.print(f"[dim]Note: Serving cached result for '{args.query}'[/dim]")
+                    console.print_json(data=cached)
             else:
                 try:
-                    console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
+                    if args.format != "json":
+                        console.print(f"[cyan]Searching Brave for:[/cyan] {args.query}...")
                     result = core.perform_brave_search(args.query)
                     core.log_search(args.query, result)
-                    console.print_json(data=result)
+                    if args.format == "json":
+                        print(json.dumps(result, indent=2))
+                    else:
+                        console.print_json(data=result)
                 except core.MissingAPIKeyError:
-                    console.print(Panel(
-                        "[bold red]Active Search Unavailable[/bold red]\n\n"
-                        "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
-                        "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
-                        "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
-                        "[dim]Or provide a result manually via --set-result if you are an Agent.[/dim]",
-                        title="Setup Required",
-                        border_style="red"
-                    ))
+                    msg = "Active Search Unavailable: BRAVE_API_KEY not found in environment variables."
+                    if args.format == "json":
+                        print(json.dumps({"ok": False, "error": msg}))
+                    else:
+                        console.print(Panel(
+                            "[bold red]Active Search Unavailable[/bold red]\n\n"
+                            "To use the Vault in standalone mode, you need a Brave Search API Key.\n"
+                            "1. Get a free key: [link]https://brave.com/search/api[/link]\n"
+                            "2. Set env var: [bold yellow]export BRAVE_API_KEY=YOUR_KEY[/bold yellow]\n\n"
+                            "[dim]Or provide a result manually via --set-result if you are an Agent.[/dim]",
+                            title="Setup Required",
+                            border_style="red"
+                        ))
+                    raise SystemExit(1)
                 except Exception as e:
-                    console.print(f"[red]Search failed:[/red] {e}")
+                    if args.format == "json":
+                        print(json.dumps({"ok": False, "error": f"Search failed: {e}"}))
+                    else:
+                        console.print(f"[red]Search failed:[/red] {e}")
+                    raise SystemExit(1)
     elif args.command == "log":
         core.log_event(
             args.id,
@@ -423,20 +532,68 @@ def main():
         console.print(f"[green]✔ Logged[/green] [bold cyan]{args.type}[/] for [bold white]{args.id}[/] (conf: {args.conf}, src: {args.source})")
     elif args.command == "status":
         from rich.console import Group
-        
+
         status = core.get_status(args.id, tag_filter=args.filter_tag, branch=args.branch)
         if not status:
-            console.print(f"[red]Project '{args.id}' not found.[/red]")
+            msg = f"Project '{args.id}' not found."
+            if args.format == "json":
+                print(json.dumps({"ok": False, "error": msg}))
+            else:
+                console.print(f"[red]{msg}[/red]")
+            raise SystemExit(1)
         else:
             p = status['project']
+            insights = core.get_insights(
+                args.id,
+                branch=args.branch,
+                limit=max(1, int(args.insights_limit or 50)),
+            )
+
+            if args.format == "json":
+                payload = {
+                    "project": {
+                        "id": p[0],
+                        "name": p[1],
+                        "objective": p[2],
+                        "status": p[3],
+                        "created_at": p[4],
+                        "priority": p[5],
+                    },
+                    "recent_events": [
+                        {
+                            "type": e[0],
+                            "step": e[1],
+                            "payload": e[2],
+                            "confidence": e[3],
+                            "source": e[4],
+                            "timestamp": e[5],
+                            "tags": e[6],
+                        }
+                        for e in status["recent_events"]
+                    ],
+                    "insights": [
+                        {
+                            "title": i[0],
+                            "content": i[1],
+                            "evidence": i[2],
+                            "tags": i[3],
+                            "timestamp": i[4],
+                            "confidence": i[5],
+                        }
+                        for i in insights
+                    ],
+                }
+                print(json.dumps(payload, indent=2, default=str))
+                return
+
             # p: id, name, objective, status, created_at, priority
-            
+
             # Header Info
             info_text = f"[bold white]{p[1]}[/bold white] [dim]({p[0]})[/dim]\n"
             info_text += f"Status: [bold { 'green' if p[3]=='active' else 'red'}]{p[3].upper()}[/]\n"
             info_text += f"Objective: {p[2]}\n"
             info_text += f"Created: {p[4]}"
-            
+
             # Event Table
             event_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
             event_table.add_column("Time", style="dim")
@@ -456,9 +613,8 @@ def main():
                     f"[{conf_color}]{e[3]}[/]",
                     e[2][:50] + "..." if len(e[2]) > 50 else e[2]
                 )
-            
+
             # Insights Panel (if any)
-            insights = core.get_insights(args.id, branch=args.branch)
             if insights:
                 insight_table = Table(box=box.SIMPLE, show_header=False)
                 for i in insights:
@@ -466,7 +622,7 @@ def main():
                 content = Group(info_text, Rule(style="white"), event_table, Rule(style="white"), insight_table)
             else:
                 content = Group(info_text, Rule(style="white"), event_table)
-                
+
             console.print(Panel(content, title=f"Research Vault Status: {p[1]}", border_style="blue"))
     elif args.command == "insight":
         if args.interactive:
@@ -491,7 +647,27 @@ def main():
                 core.add_insight(args.id, args.title, args.content, args.url, args.tags, confidence=args.conf, branch=args.branch)
                 print(f"Added insight to project '{args.id}'.")
         else:
-            insights = core.get_insights(args.id, tag_filter=args.filter_tag, branch=args.branch)
+            insights = core.get_insights(
+                args.id,
+                tag_filter=args.filter_tag,
+                branch=args.branch,
+                limit=max(1, int(args.limit or 200)),
+            )
+            if args.format == "json":
+                rows = [
+                    {
+                        "title": i[0],
+                        "content": i[1],
+                        "evidence": i[2],
+                        "tags": i[3],
+                        "timestamp": i[4],
+                        "confidence": i[5],
+                    }
+                    for i in insights
+                ]
+                print(json.dumps(rows, indent=2, default=str))
+                return
+
             if not insights:
                 print("No insights found" + (f" with tag '{args.filter_tag}'" if args.filter_tag else ""))
             for i in insights:
@@ -508,18 +684,37 @@ def main():
             console.print(f"[green]✔ Created branch[/green] [bold]{args.name}[/] ({branch_id}) for project [bold]{args.id}[/]")
         elif args.branch_command == "list":
             rows = core.list_branches(args.id)
-            if not rows:
-                console.print("[yellow]No branches found.[/yellow]")
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        [
+                            {
+                                "id": bid,
+                                "name": name,
+                                "parent_id": parent_id,
+                                "hypothesis": hypothesis,
+                                "status": status,
+                                "created_at": created_at,
+                            }
+                            for (bid, name, parent_id, hypothesis, status, created_at) in rows
+                        ],
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
-                table = Table(title=f"Branches: {args.id}", box=box.ROUNDED)
-                table.add_column("Name", style="cyan")
-                table.add_column("ID", style="dim")
-                table.add_column("Parent", style="magenta")
-                table.add_column("Status", style="bold")
-                table.add_column("Hypothesis")
-                for (bid, name, parent_id, hypothesis, status, created_at) in rows:
-                    table.add_row(name, bid, parent_id or "", status, (hypothesis or "")[:80])
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No branches found.[/yellow]")
+                else:
+                    table = Table(title=f"Branches: {args.id}", box=box.ROUNDED)
+                    table.add_column("Name", style="cyan")
+                    table.add_column("ID", style="dim")
+                    table.add_column("Parent", style="magenta")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Hypothesis")
+                    for (bid, name, parent_id, hypothesis, status, created_at) in rows:
+                        table.add_row(name, bid, parent_id or "", status, (hypothesis or "")[:80])
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] branch requires a subcommand (create|list).")
     elif args.command == "hypothesis":
@@ -535,18 +730,39 @@ def main():
             console.print(f"[green]✔ Added hypothesis[/green] {hid} to branch [bold]{args.branch}[/]")
         elif args.hyp_command == "list":
             rows = core.list_hypotheses(args.id, branch=args.branch)
-            if not rows:
-                console.print("[yellow]No hypotheses found.[/yellow]")
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        [
+                            {
+                                "id": hid,
+                                "branch": bname,
+                                "statement": stmt,
+                                "rationale": rationale,
+                                "confidence": conf,
+                                "status": status,
+                                "created_at": created_at,
+                                "updated_at": updated_at,
+                            }
+                            for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows
+                        ],
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
-                table = Table(title=f"Hypotheses: {args.id}", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Branch", style="cyan")
-                table.add_column("Status", style="bold")
-                table.add_column("Conf", justify="right")
-                table.add_column("Statement")
-                for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows:
-                    table.add_row(hid, bname, status, f"{conf:.2f}", (stmt or "")[:90])
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No hypotheses found.[/yellow]")
+                else:
+                    table = Table(title=f"Hypotheses: {args.id}", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Branch", style="cyan")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Conf", justify="right")
+                    table.add_column("Statement")
+                    for (hid, bname, stmt, rationale, conf, status, created_at, updated_at) in rows:
+                        table.add_row(hid, bname, status, f"{conf:.2f}", (stmt or "")[:90])
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] hypothesis requires a subcommand (add|list).")
     elif args.command == "artifact":
@@ -566,16 +782,34 @@ def main():
             console.print(f"[green]✔ Added artifact[/green] {artifact_id}")
         elif args.artifact_command == "list":
             rows = core.list_artifacts(args.id, branch=args.branch)
-            if not rows:
-                console.print("[yellow]No artifacts found.[/yellow]")
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        [
+                            {
+                                "id": aid,
+                                "type": atype,
+                                "path": path,
+                                "metadata": metadata,
+                                "created_at": created_at,
+                            }
+                            for (aid, atype, path, metadata, created_at) in rows
+                        ],
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
-                table = Table(title=f"Artifacts: {args.id}", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Type", style="cyan")
-                table.add_column("Path", style="green")
-                for (aid, atype, path, metadata, created_at) in rows:
-                    table.add_row(aid, atype, path)
-                console.print(table)
+                if not rows:
+                    console.print("[yellow]No artifacts found.[/yellow]")
+                else:
+                    table = Table(title=f"Artifacts: {args.id}", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Type", style="cyan")
+                    table.add_column("Path", style="green")
+                    for (aid, atype, path, metadata, created_at) in rows:
+                        table.add_row(aid, atype, path)
+                    console.print(table)
         else:
             console.print("[red]Error:[/red] artifact requires a subcommand (add|list).")
     elif args.command == "synthesize":
@@ -589,20 +823,23 @@ def main():
             max_links=args.max_links,
             persist=not args.dry_run,
         )
-        if not links:
-            console.print("[yellow]No links found above threshold.[/yellow]")
+        if args.format == "json":
+            print(json.dumps(links or [], indent=2, default=str))
         else:
-            table = Table(title="Synthesis Links", box=box.ROUNDED)
-            table.add_column("Score", justify="right", style="magenta")
-            table.add_column("Source", style="cyan")
-            table.add_column("Target", style="green")
-            for link in links:
-                table.add_row(
-                    f"{link['score']:.3f}",
-                    f"{link['source_label']} ({link['source_id']})",
-                    f"{link['target_label']} ({link['target_id']})",
-                )
-            console.print(table)
+            if not links:
+                console.print("[yellow]No links found above threshold.[/yellow]")
+            else:
+                table = Table(title="Synthesis Links", box=box.ROUNDED)
+                table.add_column("Score", justify="right", style="magenta")
+                table.add_column("Source", style="cyan")
+                table.add_column("Target", style="green")
+                for link in links:
+                    table.add_row(
+                        f"{link['score']:.3f}",
+                        f"{link['source_label']} ({link['source_id']})",
+                        f"{link['target_label']} ({link['target_id']})",
+                    )
+                console.print(table)
     elif args.command == "verify":
         if args.verify_command == "plan":
             missions = core.plan_verification_missions(
@@ -611,16 +848,25 @@ def main():
                 threshold=args.threshold,
                 max_missions=args.max_missions,
             )
-            if not missions:
-                console.print("[yellow]No missions created (nothing under threshold or already planned).[/yellow]")
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        [{"id": mid, "finding_id": fid, "query": q} for mid, fid, q in missions],
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
-                table = Table(title="Verification Missions (Created)", box=box.ROUNDED)
-                table.add_column("Mission", style="dim")
-                table.add_column("Finding", style="cyan")
-                table.add_column("Query", style="green")
-                for mid, fid, q in missions:
-                    table.add_row(mid, fid, q[:120])
-                console.print(table)
+                if not missions:
+                    console.print("[yellow]No missions created (nothing under threshold or already planned).[/yellow]")
+                else:
+                    table = Table(title="Verification Missions (Created)", box=box.ROUNDED)
+                    table.add_column("Mission", style="dim")
+                    table.add_column("Finding", style="cyan")
+                    table.add_column("Query", style="green")
+                    for mid, fid, q in missions:
+                        table.add_row(mid, fid, q[:120])
+                    console.print(table)
         elif args.verify_command == "list":
             rows = core.list_verification_missions(
                 args.id,
@@ -628,26 +874,48 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
-            if not rows:
-                console.print("[yellow]No missions found.[/yellow]")
-            else:
-                table = Table(title="Verification Missions", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Status", style="bold")
-                table.add_column("Pri", justify="right", style="magenta")
-                table.add_column("Finding", style="cyan")
-                table.add_column("Conf", justify="right")
-                table.add_column("Query", style="green")
-                for mid, status, pri, query, title, conf, created_at, completed_at, last_error in rows:
-                    table.add_row(
-                        mid,
-                        status,
-                        str(pri),
-                        (title or "")[:40],
-                        f"{float(conf or 0.0):.2f}",
-                        (query or "")[:80],
+            if args.format == "json":
+                print(
+                    json.dumps(
+                        [
+                            {
+                                "id": mid,
+                                "status": status,
+                                "priority": pri,
+                                "query": query,
+                                "finding_title": title,
+                                "finding_conf": conf,
+                                "created_at": created_at,
+                                "completed_at": completed_at,
+                                "last_error": last_error,
+                            }
+                            for (mid, status, pri, query, title, conf, created_at, completed_at, last_error) in rows
+                        ],
+                        indent=2,
+                        default=str,
                     )
-                console.print(table)
+                )
+            else:
+                if not rows:
+                    console.print("[yellow]No missions found.[/yellow]")
+                else:
+                    table = Table(title="Verification Missions", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Pri", justify="right", style="magenta")
+                    table.add_column("Finding", style="cyan")
+                    table.add_column("Conf", justify="right")
+                    table.add_column("Query", style="green")
+                    for mid, status, pri, query, title, conf, created_at, completed_at, last_error in rows:
+                        table.add_row(
+                            mid,
+                            status,
+                            str(pri),
+                            (title or "")[:40],
+                            f"{float(conf or 0.0):.2f}",
+                            (query or "")[:80],
+                        )
+                    console.print(table)
         elif args.verify_command == "run":
             results = core.run_verification_missions(
                 args.id,
@@ -655,22 +923,25 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
-            if not results:
-                console.print("[yellow]No missions executed.[/yellow]")
+            if args.format == "json":
+                print(json.dumps(results or [], indent=2, default=str))
             else:
-                table = Table(title="Verification Run", box=box.ROUNDED)
-                table.add_column("ID", style="dim")
-                table.add_column("Status", style="bold")
-                table.add_column("Query", style="green")
-                table.add_column("Info")
-                for r in results:
-                    info = ""
-                    if r.get("meta"):
-                        info = json.dumps(r["meta"], ensure_ascii=True)[:120]
-                    if r.get("error"):
-                        info = r["error"][:120]
-                    table.add_row(r["id"], r["status"], (r["query"] or "")[:80], info)
-                console.print(table)
+                if not results:
+                    console.print("[yellow]No missions executed.[/yellow]")
+                else:
+                    table = Table(title="Verification Run", box=box.ROUNDED)
+                    table.add_column("ID", style="dim")
+                    table.add_column("Status", style="bold")
+                    table.add_column("Query", style="green")
+                    table.add_column("Info")
+                    for r in results:
+                        info = ""
+                        if r.get("meta"):
+                            info = json.dumps(r["meta"], ensure_ascii=True)[:120]
+                        if r.get("error"):
+                            info = r["error"][:120]
+                        table.add_row(r["id"], r["status"], (r["query"] or "")[:80], info)
+                    console.print(table)
         elif args.verify_command == "complete":
             core.set_verification_mission_status(args.mission, args.status, note=args.note)
             console.print(f"[green]✔ Updated mission[/green] {args.mission} -> {args.status}")
@@ -743,7 +1014,14 @@ def main():
             )
     elif args.command == "mcp":
         # IMPORTANT: keep stdout clean for stdio transport.
-        from scripts.mcp_server import mcp as server
+        try:
+            from scripts.services.mcp_server import mcp as server
+        except ImportError:
+            console.print(
+                "[red]Error: MCP package not installed.[/red]\n"
+                "Install it with: pip install 'researchvault[mcp]' or pip install mcp"
+            )
+            return
 
         server.run(transport=args.transport, mount_path=args.mount_path)
     elif args.command == "watch":
@@ -786,7 +1064,7 @@ def main():
         else:
             console.print("[red]Error:[/red] watch requires a subcommand (add|list|disable).")
     elif args.command == "watchdog":
-        from scripts.watchdog import loop as watchdog_loop, run_once
+        from scripts.services.watchdog import loop as watchdog_loop, run_once
 
         if args.once:
             actions = run_once(project_id=args.id, branch=args.branch, limit=args.limit, dry_run=args.dry_run)

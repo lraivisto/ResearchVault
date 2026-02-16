@@ -438,6 +438,8 @@ def recommend_next_best_action(
     has_low_confidence = (state.low_confidence_count + state.unverified_count) > 0
     has_open_queue = (state.missions_open + state.missions_in_progress + state.missions_blocked) > 0
     brave_available = bool(os.environ.get("BRAVE_API_KEY"))
+    serper_available = bool(os.environ.get("SERPER_API_KEY"))
+    searxng_available = bool(os.environ.get("SEARXNG_BASE_URL"))
 
     if has_low_confidence:
         if not has_open_queue:
@@ -463,8 +465,10 @@ def recommend_next_best_action(
         rationale = [
             f"Verification queue exists (open={state.missions_open}, in_progress={state.missions_in_progress}, blocked={state.missions_blocked}).",
         ]
-        if not brave_available:
-            rationale.append("BRAVE_API_KEY not set; missions may become blocked unless results are manually injected via cache.")
+        if not brave_available and not serper_available and not searxng_available:
+            rationale.append(
+                "No key-based search provider configured; missions will fall back to DuckDuckGo/Wikipedia (best-effort). Configure Brave for higher quality and consistency."
+            )
 
         cmds = [
             f"vault verify run --id {state.project_id} --branch {state.branch} --limit {cfg.verify_run_limit}",
@@ -645,4 +649,3 @@ def strategize(
         ex = execute_recommendation(project_id, rec, branch=branch, config=cfg)
         out["execution"] = ex.to_dict()
     return json.loads(json.dumps(out, ensure_ascii=True))
-

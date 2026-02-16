@@ -25,6 +25,32 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+## 🌐 Portal (v3)
+
+Run the portal manually (nothing auto-starts in the background):
+
+```bash
+./start_portal.sh
+```
+
+- Backend binds to `127.0.0.1:8000`
+- Frontend binds to `127.0.0.1:5173`
+- Login token is read from `.portal_auth` (or generated on first run)
+- Use either host for login links:
+  - `http://127.0.0.1:5173/#token=<token>`
+  - `http://localhost:5173/#token=<token>`
+
+Process controls:
+
+```bash
+./start_portal.sh --status
+./start_portal.sh --stop
+```
+
+Ingest SSRF behavior matches CLI defaults:
+- Private/local/link-local targets are blocked by default.
+- Portal checkbox **Allow private networks** maps to CLI `--allow-private-networks`.
+
 ## 🛠️ Key Workflows
 
 ### 1. Project Management

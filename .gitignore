@@ -10,7 +10,23 @@ venv/
 
 get-pip.py
 
+# Frontend dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+
 # Local SQLite vaults (never commit)
 *.db
 *.sqlite
 *.sqlite3
+
+# Packaging
+*.egg-info/
+build/
+dist/
+__pycache__/
+
+# Auth
+.portal_auth
+

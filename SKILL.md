@@ -33,6 +33,21 @@ metadata:
                     "description": "Optional: API key for live web search and verification. Set in skills.entries.researchvault.env.BRAVE_API_KEY.",
                     "required": false,
                   },
+                "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to scan ~/.openclaw/workspace/memory for vault databases.",
+                    "required": false,
+                  },
+                "RESEARCHVAULT_PORTAL_PERSIST_SECRETS":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to persist entered API keys to local state.json.",
+                    "required": false,
+                  },
+                "RESEARCHVAULT_PORTAL_INJECT_SECRETS":
+                  {
+                    "description": "Optional: Set to '1' to allow Portal to inject secrets into vault subprocesses.",
+                    "required": false,
+                  },
               },
           },
       },
@@ -77,6 +92,32 @@ pip install -e .
    ```bash
    python scripts/vault.py strategy --id "trends-2026"
    ```
+
+## Portal (Manual Opt-In)
+
+Start the portal explicitly:
+
+```bash
+./start_portal.sh
+```
+
+- Backend: `127.0.0.1:8000`
+- Frontend: `127.0.0.1:5173`
+- Token login: `.portal_auth` and URL hash `#token=<token>`
+- Both hosts are supported for browser access:
+  - `http://127.0.0.1:5173/#token=<token>`
+  - `http://localhost:5173/#token=<token>`
+
+Operational commands:
+
+```bash
+./start_portal.sh --status
+./start_portal.sh --stop
+```
+
+Security parity with CLI:
+- SSRF blocking is on by default (private/local/link-local targets denied).
+- Portal toggle **Allow private networks** is equivalent to CLI `--allow-private-networks`.
 
 ## Optional Services (Manual Start)
 

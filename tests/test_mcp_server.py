@@ -2,6 +2,8 @@ import os
 import sys
 
 import anyio
+import pytest
+pytest.importorskip("mcp")
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
@@ -14,7 +16,7 @@ def test_mcp_server_exposes_tools(tmp_path):
 
         server = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "scripts.mcp_server"],
+            args=["-m", "scripts.services.mcp_server"],
             env=env,
             cwd=os.getcwd(),
             encoding="utf-8",

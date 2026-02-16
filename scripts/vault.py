@@ -350,23 +350,23 @@ def main():
                 console.print("[yellow]No projects found.[/yellow]")
             else:
                 table = Table(title="Research Vault Projects", box=box.ROUNDED)
-            table.add_column("ID", style="cyan", no_wrap=True)
-            table.add_column("Prior", style="magenta", justify="center")
-            table.add_column("Status", style="bold")
-            table.add_column("Name", style="green")
-            table.add_column("Objective")
-            
-            for p in projects:
-                # p: id, name, objective, status, created_at, priority
-                status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
-                table.add_row(
-                    p[0], 
-                    str(p[5]), 
-                    f"[{status_style}]{p[3].upper()}[/{status_style}]", 
-                    p[1], 
-                    p[2]
-                )
-            console.print(table)
+                table.add_column("ID", style="cyan", no_wrap=True)
+                table.add_column("Prior", style="magenta", justify="center")
+                table.add_column("Status", style="bold")
+                table.add_column("Name", style="green")
+                table.add_column("Objective")
+                
+                for p in projects:
+                    # p: id, name, objective, status, created_at, priority
+                    status_style = "green" if p[3] == "active" else "red" if p[3] == "failed" else "blue"
+                    table.add_row(
+                        p[0], 
+                        str(p[5]), 
+                        f"[{status_style}]{p[3].upper()}[/{status_style}]", 
+                        p[1], 
+                        p[2]
+                    )
+                console.print(table)
     elif args.command == "update":
         core.update_status(args.id, args.status, args.priority)
     elif args.command == "summary":
@@ -1014,7 +1014,14 @@ def main():
             )
     elif args.command == "mcp":
         # IMPORTANT: keep stdout clean for stdio transport.
-        from scripts.services.mcp_server import mcp as server
+        try:
+            from scripts.services.mcp_server import mcp as server
+        except ImportError:
+            console.print(
+                "[red]Error: MCP package not installed.[/red]\n"
+                "Install it with: pip install 'researchvault[mcp]' or pip install mcp"
+            )
+            return
 
         server.run(transport=args.transport, mount_path=args.mount_path)
     elif args.command == "watch":

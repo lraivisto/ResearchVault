@@ -444,14 +444,13 @@ def add_artifact(
     branch: Optional[str] = None,
 ) -> str:
     # --- Security Hardening: Path Sanitization ---
-    # Resolve and check against workspace or safe directories
+    # Resolve and check against safe local directories
     abs_path = os.path.abspath(os.path.expanduser(path))
-    workspace_root = os.path.abspath(os.path.expanduser("~/.openclaw/workspace"))
     vault_root = os.path.abspath(os.path.expanduser("~/.researchvault"))
     
     # Check if path is within allowed boundaries
     is_safe = False
-    for safe_root in [workspace_root, vault_root]:
+    for safe_root in [vault_root]:
         if abs_path.startswith(safe_root):
             is_safe = True
             break
@@ -461,7 +460,7 @@ def add_artifact(
         is_safe = True
 
     if not is_safe:
-        raise ValueError(f"Security violation: Artifact path must be within {workspace_root} or {vault_root}")
+        raise ValueError(f"Security violation: Artifact path must be within {vault_root}")
     # ---------------------------------------------
 
     artifact_id = f"art_{uuid.uuid4().hex[:10]}"

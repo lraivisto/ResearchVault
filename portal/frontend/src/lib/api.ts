@@ -107,9 +107,7 @@ export type DiagnosticsResponse = {
     RESEARCHVAULT_SEARCH_PROVIDERS?: string | null;
     RESEARCHVAULT_WATCHDOG_INGEST_TOP?: string | null;
     RESEARCHVAULT_VERIFY_INGEST_TOP?: string | null;
-    RESEARCHVAULT_PORTAL_SCAN_OPENCLAW?: string | null;
     RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS?: string | null;
-    RESEARCHVAULT_PORTAL_INJECT_SECRETS?: string | null;
     RESEARCHVAULT_PORTAL_TOKEN_set: boolean;
     BRAVE_API_KEY_set: boolean;
     SERPER_API_KEY_set?: boolean;

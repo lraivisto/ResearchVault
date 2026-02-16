@@ -20,8 +20,6 @@ from portal.backend.app.db_resolver import (
     candidates_as_dict,
     inspect_db,
     now_ms,
-    openclaw_scan_enabled,
-    openclaw_scan_requested,
     resolve_current_db,
     resolve_effective_db,
     resolved_as_dict,
@@ -277,44 +275,6 @@ def system_diagnostics():
                 }
             )
 
-    if openclaw_scan_enabled():
-        hints.append(
-            {
-                "type": "openclaw_scan_enabled",
-                "severity": "low",
-                "title": "OpenClaw scan enabled",
-                "detail": (
-                    "Portal is allowed to discover and use DBs under ~/.openclaw/workspace "
-                    "because RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1."
-                ),
-            }
-        )
-    elif openclaw_scan_requested():
-        hints.append(
-            {
-                "type": "openclaw_scan_blocked",
-                "severity": "medium",
-                "title": "OpenClaw scan requested but blocked",
-                "detail": (
-                    "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW=1 is set, but ~/.openclaw/workspace is not inside "
-                    "RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS."
-                ),
-            }
-        )
-
-    if os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS") == "1":
-        hints.append(
-            {
-                "type": "portal_secret_injection_enabled",
-                "severity": "low",
-                "title": "Portal secret injection enabled",
-                "detail": (
-                    "Portal-managed provider secrets are injected into vault subprocesses "
-                    "because RESEARCHVAULT_PORTAL_INJECT_SECRETS=1."
-                ),
-            }
-        )
-
     # If no "strong" provider is configured, searches will fall back to best-effort providers.
     if (not secrets.brave_api_key_configured) and (not secrets.serper_api_key_configured) and (not secrets.searxng_base_url_configured):
         needs_search = False
@@ -345,9 +305,7 @@ def system_diagnostics():
             "RESEARCHVAULT_SEARCH_PROVIDERS": os.getenv("RESEARCHVAULT_SEARCH_PROVIDERS"),
             "RESEARCHVAULT_WATCHDOG_INGEST_TOP": os.getenv("RESEARCHVAULT_WATCHDOG_INGEST_TOP"),
             "RESEARCHVAULT_VERIFY_INGEST_TOP": os.getenv("RESEARCHVAULT_VERIFY_INGEST_TOP"),
-            "RESEARCHVAULT_PORTAL_SCAN_OPENCLAW": os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW"),
             "RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS": os.getenv("RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS"),
-            "RESEARCHVAULT_PORTAL_INJECT_SECRETS": os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS"),
             "RESEARCHVAULT_PORTAL_TOKEN_set": bool(os.getenv("RESEARCHVAULT_PORTAL_TOKEN")),
             "BRAVE_API_KEY_set": bool(os.getenv("BRAVE_API_KEY")),
             "SERPER_API_KEY_set": bool(os.getenv("SERPER_API_KEY")),

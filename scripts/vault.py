@@ -306,11 +306,10 @@ def main():
             if args.output:
                 # --- Security Hardening: Output Path Sanitization ---
                 abs_out = os.path.abspath(os.path.expanduser(args.output))
-                workspace_root = os.path.abspath(os.path.expanduser("~/.openclaw/workspace"))
                 vault_root = os.path.abspath(os.path.expanduser("~/.researchvault"))
                 
                 is_safe = False
-                for safe_root in [workspace_root, vault_root]:
+                for safe_root in [vault_root]:
                     if abs_out.startswith(safe_root):
                         is_safe = True
                         break
@@ -320,7 +319,7 @@ def main():
                     is_safe = True
 
                 if not is_safe:
-                    console.print(f"[bold red]Security Error:[/] Output path must be within {workspace_root} or {vault_root}")
+                    console.print(f"[bold red]Security Error:[/] Output path must be within {vault_root}")
                     return
                 # ----------------------------------------------------
 

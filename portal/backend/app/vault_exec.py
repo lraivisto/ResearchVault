@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from portal.backend.app.db_resolver import resolve_effective_db
-from portal.backend.app.portal_secrets import get_brave_api_key, get_searxng_base_url, get_serper_api_key
 
 
 @dataclass
@@ -80,20 +79,8 @@ def run_vault(
     effective = db_path or resolve_effective_db().path
     env["RESEARCHVAULT_DB"] = str(effective)
 
-    # SECRETS INJECTION: Default MUST NOT inject portal secrets into subprocess env.
-    # Explicit opt-in required via RESEARCHVAULT_PORTAL_INJECT_SECRETS=1.
-    if os.getenv("RESEARCHVAULT_PORTAL_INJECT_SECRETS") == "1":
-        brave = get_brave_api_key()
-        if brave:
-            env["BRAVE_API_KEY"] = brave
-
-        serper = get_serper_api_key()
-        if serper:
-            env["SERPER_API_KEY"] = serper
-
-        searx = get_searxng_base_url()
-        if searx:
-            env["SEARXNG_BASE_URL"] = searx
+    # Never pass provider secrets into subprocesses from the Portal process.
+    # This keeps vault subprocess execution free of inherited API credentials.
 
     argv = [sys.executable, "-m", "scripts.vault", *args]
 

@@ -30,8 +30,7 @@ function candidateLabel(c: DbCandidate): string {
   const pStr = typeof projects === 'number' ? String(projects) : '?';
   const fStr = typeof findings === 'number' ? String(findings) : '?';
   const mark = c.exists ? '' : ' (missing)';
-  const openclaw = c.path.includes('/.openclaw/workspace/') ? ' | OpenClaw scan enabled' : '';
-  return `${p} | projects:${pStr} findings:${fStr}${mark}${openclaw}`;
+  return `${p} | projects:${pStr} findings:${fStr}${mark}`;
 }
 
 export default function ResearchPulseBar({

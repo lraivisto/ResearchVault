@@ -13,10 +13,6 @@ import scripts.db as vault_db
 from portal.backend.app.db_roots import allowed_db_roots, path_within_allowed_roots
 from portal.backend.app.portal_state import get_selected_db_path
 
-OPENCLAW_WORKSPACE_ROOT = Path(os.path.expanduser("~/.openclaw/workspace")).resolve()
-OPENCLAW_MEMORY_ROOT = OPENCLAW_WORKSPACE_ROOT / "memory"
-
-
 def _expand_abs(p: str) -> str:
     return str(Path(os.path.expanduser(p)).resolve())
 
@@ -169,27 +165,6 @@ def _fallback_default_db_path() -> str:
     return default
 
 
-def openclaw_scan_requested() -> bool:
-    return os.getenv("RESEARCHVAULT_PORTAL_SCAN_OPENCLAW") == "1"
-
-
-def openclaw_scan_enabled() -> bool:
-    return openclaw_scan_requested() and path_within_allowed_roots(OPENCLAW_WORKSPACE_ROOT)
-
-
-def openclaw_workspace_root() -> Path:
-    return OPENCLAW_WORKSPACE_ROOT
-
-
-def is_within_openclaw_workspace(path: str) -> bool:
-    try:
-        rp = Path(os.path.expanduser(path)).resolve()
-    except Exception:
-        return False
-    root = openclaw_workspace_root()
-    return rp == root or str(rp).startswith(str(root) + os.sep)
-
-
 def discover_candidate_paths() -> List[str]:
     paths: List[str] = []
 
@@ -208,11 +183,6 @@ def discover_candidate_paths() -> List[str]:
     # "Nearby" vaults (lightweight globbing; do not recurse).
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.db")])
     paths.extend([str(p) for p in Path(os.path.expanduser("~/.researchvault")).glob("*.sqlite*")])
-
-    if openclaw_scan_enabled():
-        paths.append(vault_db.LEGACY_DB_PATH)
-        paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.db")])
-        paths.extend([str(p) for p in OPENCLAW_MEMORY_ROOT.glob("*.sqlite*")])
 
     return [p for p in _dedup_paths(paths) if _allowed_path(p)]
 
@@ -264,46 +234,8 @@ def resolve_effective_db() -> ResolvedDb:
 
     default = inspect_db(vault_db.DEFAULT_DB_PATH) if _allowed_path(vault_db.DEFAULT_DB_PATH) else inspect_db(_fallback_default_db_path())
 
-    if not openclaw_scan_enabled():
-        if default.exists:
-            return ResolvedDb(path=default.path, source="auto", note="Only default DB exists.")
-        if Path(_expand_abs(vault_db.LEGACY_DB_PATH)).exists() and openclaw_scan_requested():
-            return ResolvedDb(
-                path=_fallback_default_db_path(),
-                source="auto",
-                note=(
-                    "Defaulting to allowed DB roots. OpenClaw workspace DB discovery was requested "
-                    "but is not effective because ~/.openclaw/workspace is outside RESEARCHVAULT_PORTAL_ALLOWED_DB_ROOTS."
-                ),
-            )
-        return ResolvedDb(
-            path=_fallback_default_db_path(),
-            source="auto",
-            note="No existing DB found; default path will be created on first write.",
-        )
-
-    legacy = inspect_db(vault_db.LEGACY_DB_PATH)
-
-    if legacy.exists and not default.exists:
-        return ResolvedDb(path=legacy.path, source="auto", note="Only legacy DB exists (OpenClaw scan enabled).")
-    if default.exists and not legacy.exists:
+    if default.exists:
         return ResolvedDb(path=default.path, source="auto", note="Only default DB exists.")
-
-    if legacy.exists and default.exists:
-        best = max([legacy, default], key=_activity_score)
-        other = default if best.path == legacy.path else legacy
-        if _activity_score(best)[0] == 0 and _activity_score(other)[0] == 0:
-            if (legacy.mtime_s or 0) > (default.mtime_s or 0):
-                best = legacy
-            elif (default.mtime_s or 0) > (legacy.mtime_s or 0):
-                best = default
-            else:
-                best = default
-        return ResolvedDb(
-            path=best.path,
-            source="auto",
-            note="Auto-selected from multiple vault DBs (highest activity/newest).",
-        )
 
     return ResolvedDb(
         path=_fallback_default_db_path(),

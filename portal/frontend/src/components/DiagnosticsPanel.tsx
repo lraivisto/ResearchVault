@@ -4,10 +4,6 @@ import { AlertTriangle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import type { DiagnosticsResponse, DiagnosticsHint } from '@/lib/api';
 import { systemGet } from '@/lib/api';
 
-function isOpenClawPath(path: string): boolean {
-  return (path || '').includes('/.openclaw/workspace/');
-}
-
 function HintCard({
   hint,
   onApplyDb,
@@ -72,11 +68,7 @@ export default function DiagnosticsPanel({
 
   const cliOk = diag?.cli.ok ?? false;
   const hints = diag?.hints ?? [];
-  const injectSecrets = diag?.env.RESEARCHVAULT_PORTAL_INJECT_SECRETS === '1';
   const providerSecretMode = 'Read-only from backend process environment variables (no portal secret writes).';
-  const providerInjectionMode = injectSecrets
-    ? 'Injected into vault commands (opt-in enabled).'
-    : 'Not injected into vault commands by default. Set RESEARCHVAULT_PORTAL_INJECT_SECRETS=1 to inject.';
 
   const statusBadge = useMemo(() => {
     if (!diag) return null;
@@ -189,12 +181,6 @@ export default function DiagnosticsPanel({
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-gray-500 font-mono">OpenClaw workspace scan</div>
-                <div className="text-xs text-gray-200 font-mono">
-                  {diag.env.RESEARCHVAULT_PORTAL_SCAN_OPENCLAW === '1' ? 'enabled (explicit opt-in)' : 'disabled (default)'}
-                </div>
-              </div>
-              <div>
                 <div className="text-[11px] text-gray-500 font-mono">Allowed DB roots</div>
                 <div className="text-xs text-gray-200 font-mono">
                   {(diag.env.effective_allowed_db_roots && diag.env.effective_allowed_db_roots.length > 0)
@@ -203,9 +189,9 @@ export default function DiagnosticsPanel({
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-gray-500 font-mono">Secret env injection</div>
+                <div className="text-[11px] text-gray-500 font-mono">Portal secret writes</div>
                 <div className="text-xs text-gray-200 font-mono">
-                  {injectSecrets ? 'enabled (explicit opt-in)' : 'disabled (default)'}
+                  disabled
                 </div>
               </div>
             </div>
@@ -240,8 +226,6 @@ export default function DiagnosticsPanel({
             {providerSecretMode}
             {' '}
             Configure via process env: <span className="text-gray-300">BRAVE_API_KEY</span>.
-            {' '}
-            {providerInjectionMode}
           </div>
         </div>
       )}
@@ -270,8 +254,6 @@ export default function DiagnosticsPanel({
             {providerSecretMode}
             {' '}
             Configure via process env: <span className="text-gray-300">SERPER_API_KEY</span>.
-            {' '}
-            {providerInjectionMode}
           </div>
         </div>
       )}
@@ -306,8 +288,6 @@ export default function DiagnosticsPanel({
             {providerSecretMode}
             {' '}
             Configure via process env: <span className="text-gray-300">SEARXNG_BASE_URL</span>.
-            {' '}
-            {providerInjectionMode}
           </div>
         </div>
       )}
@@ -346,9 +326,6 @@ export default function DiagnosticsPanel({
                 <div className="min-w-0">
                   <div className="text-xs font-mono text-gray-200 break-all">
                     {c.path}
-                    {isOpenClawPath(c.path) ? (
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-amber">OpenClaw scan enabled</span>
-                    ) : null}
                   </div>
                   <div className="text-[11px] font-mono text-gray-500">
                     {c.exists ? 'exists' : 'missing'} | projects:{c.counts?.projects ?? 'n/a'} findings:{c.counts?.findings ?? 'n/a'}{' '}
